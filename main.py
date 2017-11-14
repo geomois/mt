@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 from models.cnet import ConvNet
 import models.instruments as inst
+from dataUtils.readData import DataHandler
 import dataUtils.data_utils as du
 import pdb
 
@@ -76,16 +77,16 @@ def trainCNN():
     tf.set_random_seed(42)
     np.random.seed(42)
 
-    cifar10 =
+    dataHandler = DataHandler(dataFileName=FLAGS.volFileName)
     if (FLAGS.weight_reg_strength is None):
         FLAGS.weight_reg_strength=0.0
 
-    x_test, y_test = cifar10.test.images, cifar10.test.labels
-    x_pl=tf.placeholder(tf.float32,shape=(None,x_test.shape[1]))
-    y_pl=tf.placeholder(tf.float32,shape=(None,y_test.shape[1]))
+    testX, testY = dataHandler.getTestData()
+    x_pl=tf.placeholder(tf.float32,shape=(None,1,testX.shape[2],testX.shape[3]))
+    y_pl=tf.placeholder(tf.float32,shape=(None,testY.shape[1]))
     trainingFlag=tf.placeholder(tf.bool)
     print ("Weight initialization: ",FLAGS.weight_init)
-    #this if clause is made to run the experiments, for some of them there need to be minor changes here
+
     if FLAGS.weight_init==WEIGHT_INITIALIZATION_DEFAULT:
         w_i=WEIGHT_INITIALIZATION_DICT[FLAGS.weight_init](stddev=FLAGS.weight_init_scale)
     elif FLAGS.weight_init == 'uniform':

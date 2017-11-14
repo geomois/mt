@@ -204,7 +204,7 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params = False):
             keyList = sorted(keyList, key=lambda tup: (tup[0], tup[1]))
         else:
             keyList = sorted(keyList)
-        dat = np.zeros((g.get_group(keyList[0]).Value.shape[0]))
+        dat = np.empty((g.get_group(keyList[0]).Value.shape[0]))
         # pdb.set_trace()
         for key in keyList:
             dat = np.vstack((dat, g.get_group(key).Value.copy().as_matrix()))
