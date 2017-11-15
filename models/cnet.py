@@ -23,6 +23,7 @@ class ConvNet(object):
         self.kernels = deque(kernels)
         self.poolingFlag = poolingLayerFlag
         self.nbFc = nbFc
+        self.functionDict = {}
         self.functionDict['init'] = weightInitializer
         self.functionDict['reg'] = weightRegularizers
         self.functionDict['act'] = activationFunctions

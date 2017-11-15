@@ -6,6 +6,7 @@ import models.instruments as inst
 from dataUtils.readData import DataHandler
 import dataUtils.data_utils as du
 import pdb
+import datetime as dt
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -120,8 +121,9 @@ def trainCNN():
     pdb.set_trace()
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
-        train_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/train', sess.graph)
-        test_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/test', sess.graph)
+        timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
+        train_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/train'+ timestamp, sess.graph)
+        test_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
 
         for epoch in range(FLAGS.max_steps):
             batch_x, batch_y = dataHandler.getNextBatch()
@@ -131,9 +133,10 @@ def trainCNN():
                 train_writer.flush()
                 print("====================================================================================")
                 print("Epoch:", '%04d' % (epoch), "loss=", "{:.2f}".format(out))
-            out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
-            test_writer.add_summary(merged_sum, epoch)
-            test_writer.flush()
+            if epoch % FLAGS.test_frequency == 0 and epoch > 0:
+                out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
+                test_writer.add_summary(merged_sum, epoch)
+                test_writer.flush()
             print("Test set:" "loss=", "{:.2f}".format(out), "accuracy=")
             if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
                 saver.save(sess, FLAGS.checkpoint_dir + '/cnn' + str(epoch) + '.ckpt')
@@ -210,7 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('-wr', '--weight_reg', type=str, default=WEIGHT_REGULARIZER_DEFAULT,
                         help='Regularizer type for weights of fully-connected layers [none, l1, l2].')
     parser.add_argument('-wrs', '--weight_reg_strength', type=float, default=WEIGHT_REGULARIZER_STRENGTH_DEFAULT,
-                        help='Regularizer strength for weights of fully-connected layers.')
+                        help='Regularizer strcength for weights of fully-connected layers.')
     parser.add_argument('--dropout_rate', type=float, default=DROPOUT_RATE_DEFAULT, help='Dropout rate.')
     parser.add_argument('--activation', type=str, default=ACTIVATION_DEFAULT,
                         help='Activation function [relu, elu, tanh, sigmoid].')
@@ -220,7 +223,7 @@ if __name__ == '__main__':
                         help='Directory for storing input data')
     parser.add_argument('-cf', '--checkpoint_freq', type=str, default=CHECKPOINT_FREQ_DEFAULT,
                         help='How frequently tests will be run')
-    parser.add_argument('-tf', '--test_fequency', type=str, default=TEST_FREQUENCY_DEFAULT,
+    parser.add_argument('-tf', '--test_frequency', type=str, default=TEST_FREQUENCY_DEFAULT,
                         help='How frequently tests will be run')
     parser.add_argument('--log_dir', type=str, default=LOG_DIR_DEFAULT, help='Summaries log directory')
     parser.add_argument('-ird', '--irFileName', type=str, default=IR_DATA_DIR_DEFAULT,
@@ -238,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--calibrate', action='store_true', help='Calibrate history')
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
-    parser.add_argument('--compare', action='store_true', help='Run comparison nn ')
+    parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run()

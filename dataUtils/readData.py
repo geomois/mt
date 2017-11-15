@@ -91,8 +91,7 @@ class DataHandler(object):
 
         if (self.params is None):
             return 1
-        self.splitTestData()
-        self._setChunkedProps(batchSize, volDepth, irDepth, sliding)
+        # self._setChunkedProps(batchSize, volDepth, irDepth, sliding)
 
         return 0
 
@@ -134,15 +133,15 @@ class DataHandler(object):
         elif (mode.lower() == 'params'):
             self.params = data
 
-    def _setChunkedProps(self, batchSize, segmentWidth=50, volDepth=3, irDepth=1, sliding=True):
-        if (volDepth == -1):
-            self.volDepth = self.volatilities.shape[0]
-        if (irDepth == -1):
-            self.irDepth = self.ir.shape[0]
-        if (segmentWidth <= self.volatilities.shape[1]):
-            self.segmentWidth = segmentWidth
-        self.sliding = sliding
-        self.batchSize = batchSize
+    # def _setChunkedProps(self, batchSize, segmentWidth=50, volDepth=3, irDepth=1, sliding=True):
+    #     if (volDepth == -1):
+    #         self.volDepth = self.volatilities.shape[0]
+    #     if (irDepth == -1):
+    #         self.irDepth = self.ir.shape[0]
+    #     if (segmentWidth <= self.volatilities.shape[1]):
+    #         self.segmentWidth = segmentWidth
+    #     self.sliding = sliding
+    #     self.batchSize = batchSize
 
     def preprocess(self, x_train, y_train, x_test, y_test):
         raise NotImplemented()
@@ -169,7 +168,7 @@ class DataHandler(object):
 
     def _segmentDataset(self, width, volDepth, irDepth):
         inSegments = np.empty((0, width, volDepth + irDepth))
-        targetSegments = np.empty((0, len(self.params[0])))
+        targetSegments = np.empty((0, self.params.shape[0]))
         # bad memory handling, we could only keep coordinates of each chunk
         while (True):
             vol, ir, params, traversedDataset = self._buildBatch(width, volDepth, irDepth)
@@ -224,8 +223,7 @@ class DataHandler(object):
         volData = self.volatilities[volStartPosition:volStopPosition, startWidthPosition:endWidthPosition]
         irData = self.ir[irStartPosition:irStopPosition, startWidthPosition:endWidthPosition]
         params = self.params[:, endWidthPosition - 1]
-        print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition, irStopPosition,
-              widthEndFlag)
+
         self.prevIrDepthPosition = irStopPosition
         self.prevVolDepthPosition = volStopPosition
         self.prevVolStartPosition = volStartPosition
@@ -242,6 +240,8 @@ class DataHandler(object):
             self.prevWidthStopPosition = -1
             self.prevWidthStartPosition = -1
             traversedFullDataset = True
+            print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition, irStopPosition,
+              widthEndFlag)
 
         # Add test data
         return volData, irData, params, traversedFullDataset
