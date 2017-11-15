@@ -9,7 +9,7 @@ import pdb
 
 
 class DataHandler(object):
-    def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2):
+    def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize = 50, width=50, volDepth=3, irDepth=2):
         self.endOfSeriesCount = 0
         self.prevIrStartPosition = -1
         self.prevVolStartPosition = -1
@@ -22,7 +22,7 @@ class DataHandler(object):
         self.ir = None
         self.params = None
         self.segmentWidth = None
-        self.batchSize = 10
+        self.batchSize = batchSize
         self.dataFileName = dataFileName
         self.modes = ['vol', 'ir', 'params']
         self.filePrefix = None
@@ -34,12 +34,15 @@ class DataHandler(object):
         self.testData = {}
         self.inputSegments = []
         self.outputSegments = []
+        self.reshapedSegments = []
         self.lastBatchPointer = -1
 
     def readH5(self, fileName):
         raise NotImplemented()
 
-    def getTestData(self):
+    def getTestData(self,batchSize=None, width=None, volDepth=None, irDepth=None):
+        if(len(self.testData)==0):
+            self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
         assert(len(self.testData)>0),"Test data not present"
         return self.testData["input"], self.testData['output']
 
@@ -87,15 +90,27 @@ class DataHandler(object):
 
         return 0
 
-    def splitTestData(self):
-        width = self.volatilities.shape[1]
-        testDataPointer = int(np.floor(self.testDataPercentage * width))
-        testStart = width - testDataPointer
-        self.testData['vol'] = self.volatilities[:, testStart: width]
-        self.testData['ir'] = self.params[:, testStart: width]
-        self.volatilities = np.delete(self.volatilities, np.arange(testStart, width), axis=1)
-        self.ir = np.delete(self.ir, np.arange(testStart, width), axis=1)
-        self.params = np.delete(self.params, np.arange(testStart, width), axis=1)
+    def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
+        volD = self.volDepth
+        if (volDepth is not None):
+            volD = volDepth
+        irD = self.irDepth
+        if (irDepth is not None):
+            irD = irDepth
+        if (width is None):
+            width = self.segmentWidth
+        if (batchSize is None):
+            batchSize = self.batchSize
+        if (len(self.inputSegments) == 0 or self.segmentWidth != width):
+            self._segmentDataset(width, volDepth, irDepth)
+            self.segmentWidth = width
+            self.reshapedSegments = []
+        pdb.set_trace()
+        self.splitBooleanIndex = np.random.rand(len(self.inputSegments)) < (1 - self.testDataPercentage)
+        if (len(self.reshapedSegments) == 0):
+            self.reshapedSegments = self.inputSegments.reshape((len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
+        self.testData['input'] = self.reshapedSegments[~self.splitBooleanIndex]
+        self.testData['output'] = self.outputSegments[~self.splitBooleanIndex]
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
         swo = inst.get_swaptiongen(modelMap=modelMap, currency=currency, irType=irType, volFileName=swoFile,
@@ -145,23 +160,20 @@ class DataHandler(object):
             if(len(self.inputSegments)== 0 or self.segmentWidth != width):
                 self._segmentDataset(width, volDepth, irDepth)
                 self.segmentWidth = width
+                self.reshapedSegments = []
             if(batchSize is None):
                 batchSize = self.batchSize
             pdb.set_trace()
-            self.inputSegments = self.inputSegments.reshape((len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
-            self.splitBooleanIndex = np.random.rand(len(self.inputSegments)) < (1 - self.testDataPercentage)
+            if(len(self.reshapedSegments) == 0):
+                self.reshapedSegments = self.inputSegments.reshape((len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
             trainX = self.reshapedSegments[self.splitBooleanIndex]
             trainY = self.outputSegments[self.splitBooleanIndex]
-            testX = self.reshapedSegments[~self.splitBooleanIndex]
-            testY = self.outputSegments[~self.splitBooleanIndex]
         else:
             self.lastBatchPointer = (self.lastBatchPointer + 1) % self.inputSegments.shape[0]
             trainX = self.reshapedSegments[self.splitBooleanIndex]
             trainY = self.outputSegments[self.splitBooleanIndex]
-            testX = self.reshapedSegments[~self.splitBooleanIndex]
-            testY = self.outputSegments[~self.splitBooleanIndex]
 
-        return trainX, trainY, testX, testY
+        return trainX, trainY
 
     def _segmentDataset(self, width, volDepth, irDepth):
         inSegments = np.empty((0, width, volDepth + irDepth))

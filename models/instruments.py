@@ -209,7 +209,7 @@ class SwaptionGen (du.TimeSeriesData):
         #Quotes & calibration helpers
         volas = self.__getitem__(self._dates[0])
         volas.shape = (volas.shape[0]*volas.shape[1],)
-        pdb.set_trace()
+        # pdb.set_trace()
         self._quotes = [ql.SimpleQuote(vola) for vola in volas]
         self.error_type = error_type
         self.__create_helpers()
@@ -417,14 +417,14 @@ class SwaptionGen (du.TimeSeriesData):
 
         header = self.ok_format % ('maturity','length','volatility','implied','error')
         dblrule = '=' * len(header)
-        pdb.set_trace()
+        # pdb.set_trace()
         for iDate in range(start, end):
             self.model.setParams(self._default_params)
             #Return tuple (date, orig_evals, optim_evals, hist_evals, 
             #orig_objective, orig_mean_error, hist_objective, hist_mean_error, 
             #original params, hist parameters, errors)            
             try:
-                pdb.set_trace()
+                # pdb.set_trace()
                 res = self.calibrate(self._dates[iDate], prev_params)
             except RuntimeError as e:
                 print('')

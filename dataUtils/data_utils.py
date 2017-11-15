@@ -107,7 +107,7 @@ def fromfile(file_name):
 
 class TimeSeriesData(object):
     def __init__(self, key, file_name=h5file, data = None):
-        pdb.set_trace()
+        # pdb.set_trace()
         if(data is None):
             self._data = from_hdf5(key, file_name)
         else:
