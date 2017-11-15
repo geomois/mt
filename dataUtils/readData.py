@@ -9,7 +9,19 @@ import pdb
 
 
 class DataHandler(object):
-    def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize = 50, width=50, volDepth=3, irDepth=2):
+    def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
+                 irDepth=2, sliding=True):
+        self.modes = ['vol', 'ir', 'params']
+        self.dataFileName = dataFileName
+        self.batchSize = batchSize
+        self.segmentWidth = width
+        self.volDepth = volDepth
+        self.irDepth = irDepth
+        self.sliding = sliding
+        self.testDataPercentage = testDataPercentage
+        self.splitBooleanIndex = []
+        self.testData = {}
+
         self.endOfSeriesCount = 0
         self.prevIrStartPosition = -1
         self.prevVolStartPosition = -1
@@ -17,21 +29,10 @@ class DataHandler(object):
         self.prevIrDepthPosition = -1
         self.prevWidthStopPosition = -1
         self.prevWidthStartPosition = -1
-        self.trainData = None
         self.volatilities = None
         self.ir = None
         self.params = None
-        self.segmentWidth = None
-        self.batchSize = batchSize
-        self.dataFileName = dataFileName
-        self.modes = ['vol', 'ir', 'params']
         self.filePrefix = None
-        self.volDepth = 3
-        self.irDepth = 1
-        self.sliding = True
-        self.testDataPercentage = testDataPercentage
-        self.splitBooleanIndex = []
-        self.testData = {}
         self.inputSegments = []
         self.outputSegments = []
         self.reshapedSegments = []
@@ -40,10 +41,12 @@ class DataHandler(object):
     def readH5(self, fileName):
         raise NotImplemented()
 
-    def getTestData(self,batchSize=None, width=None, volDepth=None, irDepth=None):
-        if(len(self.testData)==0):
+    def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
+        if (len(self.testData) == 0):
+            pdb.set_trace()
+            batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
-        assert(len(self.testData)>0),"Test data not present"
+        assert (len(self.testData) > 0), "Test data not present"
         return self.testData["input"], self.testData['output']
 
     def getTrainingData(self, batchSize, depth, clean=False):
@@ -54,9 +57,11 @@ class DataHandler(object):
         '''
         raise NotImplemented()
 
-    def readData(self, fileName, batchSize, volDepth=3, irDepth=1, sliding=True, twinFile=True, clean=False):
+    def readData(self, fileName, batchSize=None, volDepth=3, irDepth=1, sliding=True, twinFile=True, clean=False):
         if (fileName is None):
             fileName = self.dataFileName
+        if(batchSize is None):
+            batchSize = self.batchSize
 
         name, prefix, fileType, mode, rest = dbc.breakPath(fileName)  # rest=[] without '.'
         fileList = [(fileName, mode)]
@@ -79,6 +84,7 @@ class DataHandler(object):
                 self._setDataFiles(npy, mode)
         elif fileType.lower() == 'npy':
             for path, mode in fileList:
+                pdb.set_trace()
                 self._setDataFiles(np.load(path), mode)
         elif fileType.lower() == 'h5':
             raise NotImplemented()
@@ -91,16 +97,9 @@ class DataHandler(object):
         return 0
 
     def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
-        volD = self.volDepth
-        if (volDepth is not None):
-            volD = volDepth
-        irD = self.irDepth
-        if (irDepth is not None):
-            irD = irDepth
-        if (width is None):
-            width = self.segmentWidth
-        if (batchSize is None):
-            batchSize = self.batchSize
+        batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
+        if(self.volatilities is None):
+            self.readData(self.dataFileName)
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth)
             self.segmentWidth = width
@@ -108,7 +107,8 @@ class DataHandler(object):
         pdb.set_trace()
         self.splitBooleanIndex = np.random.rand(len(self.inputSegments)) < (1 - self.testDataPercentage)
         if (len(self.reshapedSegments) == 0):
-            self.reshapedSegments = self.inputSegments.reshape((len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
+            self.reshapedSegments = self.inputSegments.reshape(
+                (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
         self.testData['input'] = self.reshapedSegments[~self.splitBooleanIndex]
         self.testData['output'] = self.outputSegments[~self.splitBooleanIndex]
 
@@ -139,7 +139,7 @@ class DataHandler(object):
             self.volDepth = self.volatilities.shape[0]
         if (irDepth == -1):
             self.irDepth = self.ir.shape[0]
-        if(segmentWidth <= self.volatilities.shape[1]):
+        if (segmentWidth <= self.volatilities.shape[1]):
             self.segmentWidth = segmentWidth
         self.sliding = sliding
         self.batchSize = batchSize
@@ -149,23 +149,15 @@ class DataHandler(object):
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         if (self.lastBatchPointer == -1):
-            volD = self.volDepth
-            if (volDepth is not None):
-                volD = volDepth
-            irD = self.irDepth
-            if (irDepth is not None):
-                irD = irDepth
-            if(width is None):
-                width = self.segmentWidth
-            if(len(self.inputSegments)== 0 or self.segmentWidth != width):
+            batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
+            if (len(self.inputSegments) == 0 or self.segmentWidth != width):
                 self._segmentDataset(width, volDepth, irDepth)
                 self.segmentWidth = width
                 self.reshapedSegments = []
-            if(batchSize is None):
-                batchSize = self.batchSize
             pdb.set_trace()
-            if(len(self.reshapedSegments) == 0):
-                self.reshapedSegments = self.inputSegments.reshape((len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
+            if (len(self.reshapedSegments) == 0):
+                self.reshapedSegments = self.inputSegments.reshape(
+                    (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
             trainX = self.reshapedSegments[self.splitBooleanIndex]
             trainY = self.outputSegments[self.splitBooleanIndex]
         else:
@@ -178,20 +170,19 @@ class DataHandler(object):
     def _segmentDataset(self, width, volDepth, irDepth):
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, len(self.params[0])))
-        #bad memory handling, we could only keep coordinates of each chunk
-        while(True):
+        # bad memory handling, we could only keep coordinates of each chunk
+        while (True):
             vol, ir, params, traversedDataset = self._buildBatch(width, volDepth, irDepth)
-            temp = np.column_stack((vol.T,ir.T))
-            #reshape to (1,width,#channels)
-            temp = temp.reshape((1,temp.shape[0],temp.shape[1]))
-            inSegments=np.vstack((inSegments,temp))
-            targetSegments =np.vstack((targetSegments, params))
-            if(traversedDataset):
+            temp = np.column_stack((vol.T, ir.T))
+            # reshape to (1,width,#channels)
+            temp = temp.reshape((1, temp.shape[0], temp.shape[1]))
+            inSegments = np.vstack((inSegments, temp))
+            targetSegments = np.vstack((targetSegments, params))
+            if (traversedDataset):
                 break
 
         self.inputSegments = inSegments
         self.outputSegments = targetSegments
-
 
     def _buildBatch(self, width, volDepth, irDepth):
         irDepthEnd = False
@@ -207,7 +198,7 @@ class DataHandler(object):
 
         step = 1
         if (not self.sliding or self.prevWidthStopPosition == -1):
-            step = width # this is a bit confusing and adds complexity -> simplify
+            step = width  # this is a bit confusing and adds complexity -> simplify
 
         startWidthPosition, endWidthPosition, widthEndFlag = \
             self._checkLimits(self.prevWidthStartPosition, self.prevWidthStopPosition, step, self.volatilities.shape[1])
@@ -242,7 +233,7 @@ class DataHandler(object):
         self.prevWidthStopPosition = endWidthPosition
         self.prevWidthStartPosition = startWidthPosition
 
-        if(seriesEnd and irDepthEnd and volDepthEnd):
+        if (seriesEnd and irDepthEnd and volDepthEnd):
             self.endOfSeriesCount = 0
             self.prevIrStartPosition = -1
             self.prevVolStartPosition = -1
@@ -280,3 +271,19 @@ class DataHandler(object):
             endPosition = newPosition
 
         return startPosition, endPosition, endFlag
+
+    def _checkFuncInput(self, batchSize, width, volDepth, irDepth):
+        if (batchSize is None):
+            batchSize = self.batchSize
+        if (width is None):
+            width = self.segmentWidth
+        if (volDepth is None):
+            volDepth = self.volDepth
+        if (irDepth is None):
+            irDepth = self.irDepth
+
+        assert(batchSize is not None), "Batch size not set"
+        assert (width is not None), "Width not set"
+        assert (volDepth is not None), "Volatility depth not set"
+        assert (irDepth is not None), "Interest rate depth not set"
+        return batchSize, width, volDepth, irDepth

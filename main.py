@@ -85,7 +85,7 @@ def trainCNN():
     np.random.seed(42)
 
     dataHandler = DataHandler(dataFileName=FLAGS.volFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
-                              volDepth=FLAGS.conv_vol_depth, irDepth=FLAGS.conv_ir_depth)
+                              volDepth=int(FLAGS.conv_vol_depth[0]), irDepth=int(FLAGS.conv_ir_depth[0]))
     if (FLAGS.weight_reg_strength is None):
         FLAGS.weight_reg_strength = 0.0
 
