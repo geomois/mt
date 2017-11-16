@@ -60,7 +60,7 @@ class DataHandler(object):
     def readData(self, fileName, batchSize=None, volDepth=3, irDepth=1, sliding=True, twinFile=True, clean=False):
         if (fileName is None):
             fileName = self.dataFileName
-        if(batchSize is None):
+        if (batchSize is None):
             batchSize = self.batchSize
 
         name, prefix, fileType, mode, rest = dbc.breakPath(fileName)  # rest=[] without '.'
@@ -97,7 +97,7 @@ class DataHandler(object):
 
     def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-        if(self.volatilities is None):
+        if (self.volatilities is None):
             self.readData(self.dataFileName)
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth)
@@ -183,7 +183,7 @@ class DataHandler(object):
         self.inputSegments = inSegments
         self.outputSegments = targetSegments
 
-    def _buildBatch(self, width, volDepth, irDepth):
+    def _buildBatch(self, width, volDepth, irDepth, pointers=True):
         irDepthEnd = False
         volDepthEnd = False
         seriesEnd = False
@@ -220,10 +220,6 @@ class DataHandler(object):
             irStartPosition, irStopPosition, irDepthEnd = \
                 self._checkLimits(self.prevIrStartPosition, self.prevIrDepthPosition, irDepth, self.ir.shape[0])
 
-        volData = self.volatilities[volStartPosition:volStopPosition, startWidthPosition:endWidthPosition]
-        irData = self.ir[irStartPosition:irStopPosition, startWidthPosition:endWidthPosition]
-        params = self.params[:, endWidthPosition - 1]
-
         self.prevIrDepthPosition = irStopPosition
         self.prevVolDepthPosition = volStopPosition
         self.prevVolStartPosition = volStartPosition
@@ -240,11 +236,26 @@ class DataHandler(object):
             self.prevWidthStopPosition = -1
             self.prevWidthStartPosition = -1
             traversedFullDataset = True
-            print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition, irStopPosition,
-              widthEndFlag)
+            print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition,
+                  irStopPosition,
+                  widthEndFlag)
 
-        # Add test data
+        if (pointers):
+            volData = (volStartPosition, volStopPosition, startWidthPosition, endWidthPosition)
+            irData = (irStartPosition, irStopPosition, startWidthPosition, endWidthPosition)
+            params = endWidthPosition - 1
+        else:
+            volData, irData, params = self._getActualData(volStartPosition, volStopPosition, irStartPosition, irStopPosition,
+                                          startWidthPosition, endWidthPosition)
+
         return volData, irData, params, traversedFullDataset
+
+    def _getActualData(self, volStart, volStop, irStart, irStop, widthStart, widthStop):
+        volData = self.volatilities[volStart:volStop, widthStart:widthStop]
+        irData = self.ir[irStart:irStop, widthStart:widthStop]
+        params = self.params[:, widthStop - 1]
+
+        return volData, irData, params
 
     def _checkLimits(self, prevStartPosition, prevStopPosition, step, limit):
         endFlag = False
@@ -282,7 +293,7 @@ class DataHandler(object):
         if (irDepth is None):
             irDepth = self.irDepth
 
-        assert(batchSize is not None), "Batch size not set"
+        assert (batchSize is not None), "Batch size not set"
         assert (width is not None), "Width not set"
         assert (volDepth is not None), "Volatility depth not set"
         assert (irDepth is not None), "Interest rate depth not set"
