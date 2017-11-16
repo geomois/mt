@@ -10,7 +10,7 @@ import pdb
 
 class DataHandler(object):
     def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
-                 irDepth=2, sliding=True):
+                 irDepth=2, sliding=True, useDataPointers=True):
         self.modes = ['vol', 'ir', 'params']
         self.dataFileName = dataFileName
         self.batchSize = batchSize
@@ -20,7 +20,9 @@ class DataHandler(object):
         self.sliding = sliding
         self.testDataPercentage = testDataPercentage
         self.splitBooleanIndex = []
-        self.testData = {}
+        self.testData = {"input": [], "output": []}
+        self.trainData = {"input": [], "output": []}
+        self.useDataPointers = useDataPointers
 
         self.endOfSeriesCount = 0
         self.prevIrStartPosition = -1
@@ -35,19 +37,19 @@ class DataHandler(object):
         self.filePrefix = None
         self.inputSegments = []
         self.outputSegments = []
-        self.reshapedSegments = []
+        self.dataPointers = {"vol": [], "ir": [], "params": []}
         self.lastBatchPointer = -1
 
     def readH5(self, fileName):
         raise NotImplemented()
 
     def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
-        if (len(self.testData) == 0):
+        if (len(self.testData["input"]) == 0):
             pdb.set_trace()
             batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
         assert (len(self.testData) > 0), "Test data not present"
-        return self.testData["input"], self.testData['output']
+        return np.asarray(self.testData["input"]), np.asarray(self.testData['output'])
 
     def getTrainingData(self, batchSize, depth, clean=False):
         '''
@@ -100,16 +102,65 @@ class DataHandler(object):
         if (self.volatilities is None):
             self.readData(self.dataFileName)
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
-            self._segmentDataset(width, volDepth, irDepth)
+            self._segmentDataset(width, volDepth, irDepth, self.useDataPointers)
             self.segmentWidth = width
-            self.reshapedSegments = []
         pdb.set_trace()
-        self.splitBooleanIndex = np.random.rand(len(self.inputSegments)) < (1 - self.testDataPercentage)
-        if (len(self.reshapedSegments) == 0):
-            self.reshapedSegments = self.inputSegments.reshape(
-                (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
-        self.testData['input'] = self.reshapedSegments[~self.splitBooleanIndex]
-        self.testData['output'] = self.outputSegments[~self.splitBooleanIndex]
+        dataLength = len(self.inputSegments)
+        if(self.useDataPointers):
+            dataLength = len(self.dataPointers["vol"])
+
+        self.splitBooleanIndex = np.random.rand(dataLength) < (1 - self.testDataPercentage)
+        if (self.useDataPointers):
+            inPut, outPut = self.reshapeFromPointers(width, volDepth=volDepth, irDepth=irDepth,
+                                                     nbBatches=np.where(self.splitBooleanIndex == False)[0].shape[0],
+                                                     train=False)
+        else:
+            inPut = self.inputSegments[~self.splitBooleanIndex]
+            outPut = self.outputSegments[~self.splitBooleanIndex]
+            # self.reshapedSegments = self.inputSegments.reshape(
+            #     (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
+        # self.trainData['input'] = self.reshapedSegments[self.splitBooleanIndex]
+        # self.trainData['output'] = self.reshapedSegments[self.splitBooleanIndex]
+        self.testData['input'] = inPut
+        self.testData['output'] = outPut
+
+    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None):
+        if (self.lastBatchPointer == -1):
+            nbBatches = 1
+            batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
+            if ((len(self.inputSegments) == 0 and len(
+                    self.dataPointers['vol']) == 0) or self.segmentWidth != width):
+                self._segmentDataset(width, volDepth, irDepth, pointers=self.useDataPointers)
+                self.segmentWidth = width
+            if (self.useDataPointers):
+                inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=0, nbBatches=nbBatches)
+                self.trainData["input"] = inPut
+                self.trainData["output"] = outPut
+            else:
+                self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
+                self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+
+            self.lastBatchPointer += 1
+            trainX = self.trainData["input"][self.lastBatchPointer]
+            trainY = self.trainData["output"][self.lastBatchPointer]
+        else:
+            if (self.useDataPointers):
+                pdb.set_trace()
+                self.lastBatchPointer = (self.lastBatchPointer + 1) % len(self.dataPointers['vol'])
+                if (self.lastBatchPointer >= len(self.trainData["input"])):
+                    batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
+                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=self.lastBatchPointer - 1,
+                                                             nbBatches=5)
+                    self.trainData["input"].append(inPut)
+                    self.trainData["output"].append(outPut)
+
+            else:
+                self.lastBatchPointer = (self.lastBatchPointer + 1) % self.inputSegments.shape[0]
+
+            trainX = self.trainData["input"][self.lastBatchPointer]
+            trainY = self.trainData["output"][self.lastBatchPointer]
+
+        return np.asarray(trainX), np.asarray(trainY)
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
         swo = inst.get_swaptiongen(modelMap=modelMap, currency=currency, irType=irType, volFileName=swoFile,
@@ -133,55 +184,60 @@ class DataHandler(object):
         elif (mode.lower() == 'params'):
             self.params = data
 
-    # def _setChunkedProps(self, batchSize, segmentWidth=50, volDepth=3, irDepth=1, sliding=True):
-    #     if (volDepth == -1):
-    #         self.volDepth = self.volatilities.shape[0]
-    #     if (irDepth == -1):
-    #         self.irDepth = self.ir.shape[0]
-    #     if (segmentWidth <= self.volatilities.shape[1]):
-    #         self.segmentWidth = segmentWidth
-    #     self.sliding = sliding
-    #     self.batchSize = batchSize
-
     def preprocess(self, x_train, y_train, x_test, y_test):
         raise NotImplemented()
 
-    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None):
-        if (self.lastBatchPointer == -1):
-            batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-            if (len(self.inputSegments) == 0 or self.segmentWidth != width):
-                self._segmentDataset(width, volDepth, irDepth)
-                self.segmentWidth = width
-                self.reshapedSegments = []
-            pdb.set_trace()
-            if (len(self.reshapedSegments) == 0):
-                self.reshapedSegments = self.inputSegments.reshape(
-                    (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
-            trainX = self.reshapedSegments[self.splitBooleanIndex]
-            trainY = self.outputSegments[self.splitBooleanIndex]
-        else:
-            self.lastBatchPointer = (self.lastBatchPointer + 1) % self.inputSegments.shape[0]
-            trainX = self.reshapedSegments[self.splitBooleanIndex]
-            trainY = self.outputSegments[self.splitBooleanIndex]
+    def reshapeFromPointers(self, width, volDepth, irDepth, startPointer=0, nbBatches=10, train=False,
+                            fromPointers=True):
+        # TODO: multithread reshape
+        pdb.set_trace()
+        inSegments = np.empty((0, width, volDepth + irDepth))
+        targetSegments = np.empty((0, self.params.shape[0]))
+        if (len(self.dataPointers['vol']) > 0):
+            indices = np.where(self.splitBooleanIndex == train)[0]
+            volPointers = np.array(self.dataPointers['vol'])[indices[startPointer:startPointer + nbBatches]]
+            irPointers = np.array(self.dataPointers['ir'])[indices[startPointer:startPointer + nbBatches]]
+            paramPointers = np.array(self.dataPointers['params'])[indices[startPointer:startPointer + nbBatches]]
 
-        return trainX, trainY
+            for i in range(len(volPointers)):
+                vol = self.volatilities[volPointers[i][0]:volPointers[i][1], volPointers[i][2]:volPointers[i][4]]
+                ir = self.ir[irPointers[i][0]:irPointers[i][1], irPointers[i][2]:irPointers[i][3]]
+                params = self.params[:, paramPointers[i]]
+                inPut = self._mergeReashapeInput(vol=vol, ir=ir)
+                inSegments = np.vstack((inSegments, inPut))
+                targetSegments = np.vstack((targetSegments, params))
+            else:
+                raise IndexError()
 
-    def _segmentDataset(self, width, volDepth, irDepth):
+        inSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
+        return inSegments, targetSegments
+        # self.reshapedSegments = self.inputSegments.reshape(
+        #     (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
+
+    def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, self.params.shape[0]))
         # bad memory handling, we could only keep coordinates of each chunk
         while (True):
-            vol, ir, params, traversedDataset = self._buildBatch(width, volDepth, irDepth)
-            temp = np.column_stack((vol.T, ir.T))
-            # reshape to (1,width,#channels)
-            temp = temp.reshape((1, temp.shape[0], temp.shape[1]))
-            inSegments = np.vstack((inSegments, temp))
-            targetSegments = np.vstack((targetSegments, params))
+            vol, ir, params, traversedDataset = self._buildBatch(width, volDepth, irDepth, pointers=pointers)
+            if (pointers):
+                self.dataPointers['vol'].append(vol)
+                self.dataPointers['ir'].append(ir)
+                self.dataPointers['params'].append(params)
+            else:
+                inPut = self._mergeReashapeInput(vol, ir)
+                inSegments = np.vstack((inSegments, inPut))
+                targetSegments = np.vstack((targetSegments, params))
             if (traversedDataset):
                 break
+        if (not pointers):
+            self.inputSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
+            self.outputSegments = targetSegments
 
-        self.inputSegments = inSegments
-        self.outputSegments = targetSegments
+    def _mergeReashapeInput(self, vol, ir):
+        inPut = np.column_stack((vol.T, ir.T))
+        inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
+        return inPut
 
     def _buildBatch(self, width, volDepth, irDepth, pointers=True):
         irDepthEnd = False
@@ -245,8 +301,9 @@ class DataHandler(object):
             irData = (irStartPosition, irStopPosition, startWidthPosition, endWidthPosition)
             params = endWidthPosition - 1
         else:
-            volData, irData, params = self._getActualData(volStartPosition, volStopPosition, irStartPosition, irStopPosition,
-                                          startWidthPosition, endWidthPosition)
+            volData, irData, params = self._getActualData(volStartPosition, volStopPosition, irStartPosition,
+                                                          irStopPosition,
+                                                          startWidthPosition, endWidthPosition)
 
         return volData, irData, params, traversedFullDataset
 
