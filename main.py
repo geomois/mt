@@ -38,8 +38,8 @@ VOL_DATA_DIR_DEFAULT = 'data/_vol.npy'
 IR_DATA_DIR_DEFAULT = 'data/_ir.npy'
 PARAMS_DATA_DIR_DEFAULT = 'data/_params.npy'
 # Directory for tensorflow
-LOG_DIR_DEFAULT = 'logs/'
-CHECKPOINT_DIR_DEFAULT = 'checkpoints/'
+LOG_DIR_DEFAULT = 'tf/logs/'
+CHECKPOINT_DIR_DEFAULT = 'tf/checkpoints/'
 # endregion defaultDirectories
 
 # region optionDictionaries
