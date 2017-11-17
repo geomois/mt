@@ -9,13 +9,13 @@ import pdb
 import datetime as dt
 
 # region NNDefaultConstants
-LEARNING_RATE_DEFAULT = 2e-3
+LEARNING_RATE_DEFAULT = 2e-2
 WEIGHT_REGULARIZER_STRENGTH_DEFAULT = 0.001
 WEIGHT_INITIALIZATION_SCALE_DEFAULT = 1e-4
 BATCH_SIZE_DEFAULT = 50
-MAX_STEPS_DEFAULT = 1500
+MAX_STEPS_DEFAULT = 600
 DROPOUT_RATE_DEFAULT = 0.2
-TEST_FREQUENCY_DEFAULT = 0
+TEST_FREQUENCY_DEFAULT = 300
 CHECKPOINT_FREQ_DEFAULT = 200
 DNN_HIDDEN_UNITS_DEFAULT = '100'
 BATCH_WIDTH_DEFAULT = 50
@@ -115,15 +115,14 @@ def trainCNN():
     optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=FLAGS.learning_rate)
     opt = optimizer.minimize(loss)
 
-    mergedSummaries = tf.merge_all()
+    mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
 
-    pdb.set_trace()
     with tf.Session() as sess:
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer ())
         timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
-        train_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/train'+ timestamp, sess.graph)
-        test_writer = tf.train.SummaryWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
+        train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
+        test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
 
         for epoch in range(FLAGS.max_steps):
             batch_x, batch_y = dataHandler.getNextBatch()
@@ -137,7 +136,7 @@ def trainCNN():
                 out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                 test_writer.add_summary(merged_sum, epoch)
                 test_writer.flush()
-            print("Test set:" "loss=", "{:.2f}".format(out), "accuracy=")
+            print("Test set:" "loss=", "{:.2f}".format(out))
             if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
                 saver.save(sess, FLAGS.checkpoint_dir + '/cnn' + str(epoch) + '.ckpt')
 
@@ -171,7 +170,7 @@ def main(_):
     print_flags()
     initDirectories()
     swo = None
-    pdb.set_trace()
+    # pdb.set_trace()
     inst.setDataFileName(FLAGS.data_dir)
     if FLAGS.calibrate:
         swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
@@ -221,6 +220,7 @@ if __name__ == '__main__':
                         help='Optimizer to use [sgd, adadelta, adagrad, adam, rmsprop].')
     parser.add_argument('-d', '--data_dir', type=str, default=DATA_DIR_DEFAULT,
                         help='Directory for storing input data')
+    parser.add_argument('--processedData', action='store_true', help="Signals that the data is ready to use")
     parser.add_argument('-cf', '--checkpoint_freq', type=str, default=CHECKPOINT_FREQ_DEFAULT,
                         help='How frequently tests will be run')
     parser.add_argument('-tf', '--test_frequency', type=str, default=TEST_FREQUENCY_DEFAULT,

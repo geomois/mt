@@ -6,11 +6,12 @@ import dataUtils.dbDataPreprocess as dbc
 import models.instruments as inst
 import os.path
 import pdb
+import datetime as dt
 
 
 class DataHandler(object):
     def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
-                 irDepth=2, sliding=True, useDataPointers=True):
+                 irDepth=2, sliding=True, useDataPointers=True, save=False):
         self.modes = ['vol', 'ir', 'params']
         self.dataFileName = dataFileName
         self.batchSize = batchSize
@@ -39,16 +40,21 @@ class DataHandler(object):
         self.outputSegments = []
         self.dataPointers = {"vol": [], "ir": [], "params": []}
         self.lastBatchPointer = -1
+        self.saveProcessedData = save
 
     def readH5(self, fileName):
         raise NotImplemented()
 
     def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         if (len(self.testData["input"]) == 0):
-            pdb.set_trace()
+            # pdb.set_trace()
             batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
-        assert (len(self.testData) > 0), "Test data not present"
+        assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
+        if (self.saveProcessedData):
+            suffix = 'test' + str(self.batchSize) + '-' + str(self.volDepth) + '-' + str(self.irDepth)
+            self._saveProcessedData(suffix, 'test')
+
         return np.asarray(self.testData["input"]), np.asarray(self.testData['output'])
 
     def getTrainingData(self, batchSize, depth, clean=False):
@@ -86,7 +92,7 @@ class DataHandler(object):
                 self._setDataFiles(npy, mode)
         elif fileType.lower() == 'npy':
             for path, mode in fileList:
-                pdb.set_trace()
+                # pdb.set_trace()
                 self._setDataFiles(np.load(path), mode)
         elif fileType.lower() == 'h5':
             raise NotImplemented()
@@ -104,9 +110,8 @@ class DataHandler(object):
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth, self.useDataPointers)
             self.segmentWidth = width
-        pdb.set_trace()
         dataLength = len(self.inputSegments)
-        if(self.useDataPointers):
+        if (self.useDataPointers):
             dataLength = len(self.dataPointers["vol"])
 
         self.splitBooleanIndex = np.random.rand(dataLength) < (1 - self.testDataPercentage)
@@ -115,6 +120,7 @@ class DataHandler(object):
                                                      nbBatches=np.where(self.splitBooleanIndex == False)[0].shape[0],
                                                      train=False)
         else:
+            pdb.set_trace()
             inPut = self.inputSegments[~self.splitBooleanIndex]
             outPut = self.outputSegments[~self.splitBooleanIndex]
             # self.reshapedSegments = self.inputSegments.reshape(
@@ -125,41 +131,40 @@ class DataHandler(object):
         self.testData['output'] = outPut
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None):
+        batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.lastBatchPointer == -1):
-            nbBatches = 1
-            batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
+            self.lastBatchPointer = 0
             if ((len(self.inputSegments) == 0 and len(
                     self.dataPointers['vol']) == 0) or self.segmentWidth != width):
                 self._segmentDataset(width, volDepth, irDepth, pointers=self.useDataPointers)
                 self.segmentWidth = width
             if (self.useDataPointers):
-                inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=0, nbBatches=nbBatches)
+                inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=0, nbBatches=batchSize)
                 self.trainData["input"] = inPut
                 self.trainData["output"] = outPut
             else:
                 self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
                 self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
 
-            self.lastBatchPointer += 1
-            trainX = self.trainData["input"][self.lastBatchPointer]
-            trainY = self.trainData["output"][self.lastBatchPointer]
+            trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
+            trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
+            modulo = len(self.dataPointers['vol'])
         else:
             if (self.useDataPointers):
-                pdb.set_trace()
-                self.lastBatchPointer = (self.lastBatchPointer + 1) % len(self.dataPointers['vol'])
+                modulo = len(self.dataPointers['vol'])
                 if (self.lastBatchPointer >= len(self.trainData["input"])):
                     batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=self.lastBatchPointer - 1,
-                                                             nbBatches=5)
-                    self.trainData["input"].append(inPut)
-                    self.trainData["output"].append(outPut)
-
+                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth,
+                                                             startPointer=self.lastBatchPointer,
+                                                             nbBatches=batchSize)
+                    self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
+                    self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
             else:
-                self.lastBatchPointer = (self.lastBatchPointer + 1) % self.inputSegments.shape[0]
+                modulo = len(self.inputSegments)
 
-            trainX = self.trainData["input"][self.lastBatchPointer]
-            trainY = self.trainData["output"][self.lastBatchPointer]
-
+            trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+            trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+        self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
         return np.asarray(trainX), np.asarray(trainY)
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
@@ -190,7 +195,7 @@ class DataHandler(object):
     def reshapeFromPointers(self, width, volDepth, irDepth, startPointer=0, nbBatches=10, train=False,
                             fromPointers=True):
         # TODO: multithread reshape
-        pdb.set_trace()
+        # pdb.set_trace()
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, self.params.shape[0]))
         if (len(self.dataPointers['vol']) > 0):
@@ -200,15 +205,15 @@ class DataHandler(object):
             paramPointers = np.array(self.dataPointers['params'])[indices[startPointer:startPointer + nbBatches]]
 
             for i in range(len(volPointers)):
-                vol = self.volatilities[volPointers[i][0]:volPointers[i][1], volPointers[i][2]:volPointers[i][4]]
+                vol = self.volatilities[volPointers[i][0]:volPointers[i][1], volPointers[i][2]:volPointers[i][3]]
                 ir = self.ir[irPointers[i][0]:irPointers[i][1], irPointers[i][2]:irPointers[i][3]]
                 params = self.params[:, paramPointers[i]]
                 inPut = self._mergeReashapeInput(vol=vol, ir=ir)
                 inSegments = np.vstack((inSegments, inPut))
                 targetSegments = np.vstack((targetSegments, params))
-            else:
-                raise IndexError()
-
+        else:
+            raise IndexError()
+        # pdb.set_trace()
         inSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
         return inSegments, targetSegments
         # self.reshapedSegments = self.inputSegments.reshape(
@@ -355,3 +360,14 @@ class DataHandler(object):
         assert (volDepth is not None), "Volatility depth not set"
         assert (irDepth is not None), "Interest rate depth not set"
         return batchSize, width, volDepth, irDepth
+
+    def _saveProcessedData(self, fileSuffix, data="train"):
+        if (data.lower() == "train"):
+            dictToSave = self.trainData
+        else:
+            dictToSave = self.testData
+
+        for dataType in dictToSave:
+            timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
+            fileName = self.filePrefix + timestamp + '_' + fileSuffix + '_' + str(dataType) + ".npy"
+            np.save(fileName, self.trainData[dataType])
