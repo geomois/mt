@@ -24,6 +24,7 @@ class DataHandler(object):
         self.testData = {"input": [], "output": []}
         self.trainData = {"input": [], "output": []}
         self.useDataPointers = useDataPointers
+        self.trainIndices = []
 
         self.endOfSeriesCount = 0
         self.prevIrStartPosition = -1
@@ -41,6 +42,9 @@ class DataHandler(object):
         self.dataPointers = {"vol": [], "ir": [], "params": []}
         self.lastBatchPointer = -1
         self.saveProcessedData = save
+        self.delegatedFromFile = False
+        self.runId = None
+        self._getCurrentRunId()
 
     def readH5(self, fileName):
         raise NotImplemented()
@@ -52,27 +56,15 @@ class DataHandler(object):
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
-            suffix = 'test' + str(self.batchSize) + '-' + str(self.volDepth) + '-' + str(self.irDepth)
+            suffix = 'test' + str(self.batchSize) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
             self._saveProcessedData(suffix, 'test')
 
         return np.asarray(self.testData["input"]), np.asarray(self.testData['output'])
 
-    def getTrainingData(self, batchSize, depth, clean=False):
-        '''
-        :param batchSize: size of training batch
-        :param depth: number of
-        :return:
-        '''
-        raise NotImplemented()
-
-    def readData(self, fileName, batchSize=None, volDepth=3, irDepth=1, sliding=True, twinFile=True, clean=False):
-        if (fileName is None):
-            fileName = self.dataFileName
-        if (batchSize is None):
-            batchSize = self.batchSize
-
-        name, prefix, fileType, mode, rest = dbc.breakPath(fileName)  # rest=[] without '.'
-        fileList = [(fileName, mode)]
+    def readData(self, batchSize=None, twinFile=True, clean=False):
+        batchSize, _, _, _ = self._checkFuncInput(batchSize)
+        name, prefix, fileType, mode, rest = dbc.breakPath(self.dataFileName)  # rest=[] without '.'
+        fileList = [(self.dataFileName, mode)]
         self.filePrefix = prefix + ''.join(rest)
         if twinFile:
             currentMode = mode
@@ -103,6 +95,30 @@ class DataHandler(object):
 
         return 0
 
+    def delegateDataDictsFromFile(self, fileList):
+        self.delegatedFromFile = True
+        self.useDataPointers = False
+        for i in range(len(fileList)):
+            file = fileList[i]
+            if ("test" in file):
+                dataDict = self.testData
+            else:
+                dataDict = self.trainData
+
+            mode = ""
+            if ("input" in file):
+                mode = "input"
+            elif ("output" in file):
+                mode = "output"
+
+            try:
+                if (len(mode) > 0):
+                    dataDict[mode] = np.load(file)
+                else:
+                    raise FileNotFoundError
+            except:
+                raise Exception()
+
     def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.volatilities is None):
@@ -116,17 +132,15 @@ class DataHandler(object):
 
         self.splitBooleanIndex = np.random.rand(dataLength) < (1 - self.testDataPercentage)
         if (self.useDataPointers):
-            inPut, outPut = self.reshapeFromPointers(width, volDepth=volDepth, irDepth=irDepth,
+            testIndices = np.where(self.splitBooleanIndex == False)[0]
+            inPut, outPut = self.reshapeFromPointers(width, volDepth=volDepth, irDepth=irDepth, indices=testIndices,
                                                      nbBatches=np.where(self.splitBooleanIndex == False)[0].shape[0],
                                                      train=False)
         else:
-            pdb.set_trace()
+            # pdb.set_trace()
             inPut = self.inputSegments[~self.splitBooleanIndex]
             outPut = self.outputSegments[~self.splitBooleanIndex]
-            # self.reshapedSegments = self.inputSegments.reshape(
-            #     (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
-        # self.trainData['input'] = self.reshapedSegments[self.splitBooleanIndex]
-        # self.trainData['output'] = self.reshapedSegments[self.splitBooleanIndex]
+
         self.testData['input'] = inPut
         self.testData['output'] = outPut
 
@@ -134,37 +148,52 @@ class DataHandler(object):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.lastBatchPointer == -1):
             self.lastBatchPointer = 0
-            if ((len(self.inputSegments) == 0 and len(
-                    self.dataPointers['vol']) == 0) or self.segmentWidth != width):
-                self._segmentDataset(width, volDepth, irDepth, pointers=self.useDataPointers)
-                self.segmentWidth = width
-            if (self.useDataPointers):
-                inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, startPointer=0, nbBatches=batchSize)
-                self.trainData["input"] = inPut
-                self.trainData["output"] = outPut
+            if (self.delegatedFromFile):
+                modulo = len(self.trainData["input"])
             else:
-                self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
-                self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+                if ((len(self.inputSegments) == 0 and len(
+                        self.dataPointers['vol']) == 0) or self.segmentWidth != width):
+                    self._segmentDataset(width, volDepth, irDepth, pointers=self.useDataPointers)
+                    self.segmentWidth = width
+                self.trainIndices = np.where(self.splitBooleanIndex == True)[0]
+                if (self.useDataPointers):
+                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, indices=self.trainIndices,
+                                                             startPointer=0,
+                                                             nbBatches=batchSize, train=True)
+                    self.trainData["input"] = inPut
+                    self.trainData["output"] = outPut
+                else:
+                    self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
+                    self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+                modulo = len(self.dataPointers['vol'])
 
             trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
-            modulo = len(self.dataPointers['vol'])
+
         else:
             if (self.useDataPointers):
-                modulo = len(self.dataPointers['vol'])
+                modulo = len(self.trainIndices)
+
                 if (self.lastBatchPointer >= len(self.trainData["input"])):
                     batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth,
+                    inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, indices=self.trainIndices,
                                                              startPointer=self.lastBatchPointer,
-                                                             nbBatches=batchSize)
+                                                             nbBatches=batchSize, train=True)
                     self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
+                if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
+                    suffix = 'train' + str(self.batchSize) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+                    self._saveProcessedData(suffix, 'train')
             else:
-                modulo = len(self.inputSegments)
+                if (self.delegatedFromFile):
+                    modulo = len(self.trainData["input"])
+                else:
+                    modulo = len(self.inputSegments)
 
             trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
+
         return np.asarray(trainX), np.asarray(trainY)
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
@@ -192,14 +221,15 @@ class DataHandler(object):
     def preprocess(self, x_train, y_train, x_test, y_test):
         raise NotImplemented()
 
-    def reshapeFromPointers(self, width, volDepth, irDepth, startPointer=0, nbBatches=10, train=False,
+    def reshapeFromPointers(self, width, volDepth, irDepth, indices, startPointer=0, nbBatches=10, train=False,
                             fromPointers=True):
         # TODO: multithread reshape
         # pdb.set_trace()
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, self.params.shape[0]))
         if (len(self.dataPointers['vol']) > 0):
-            indices = np.where(self.splitBooleanIndex == train)[0]
+            # if(len(self.trainIndices)):
+            #     self.trainIndices = np.where(self.splitBooleanIndex == True)[0]
             volPointers = np.array(self.dataPointers['vol'])[indices[startPointer:startPointer + nbBatches]]
             irPointers = np.array(self.dataPointers['ir'])[indices[startPointer:startPointer + nbBatches]]
             paramPointers = np.array(self.dataPointers['params'])[indices[startPointer:startPointer + nbBatches]]
@@ -216,8 +246,6 @@ class DataHandler(object):
         # pdb.set_trace()
         inSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
         return inSegments, targetSegments
-        # self.reshapedSegments = self.inputSegments.reshape(
-        #     (len(self.inputSegments), 1, width, self.inputSegments.shape[2]))
 
     def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
@@ -297,6 +325,7 @@ class DataHandler(object):
             self.prevWidthStopPosition = -1
             self.prevWidthStartPosition = -1
             traversedFullDataset = True
+
             print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition,
                   irStopPosition,
                   widthEndFlag)
@@ -345,7 +374,7 @@ class DataHandler(object):
 
         return startPosition, endPosition, endFlag
 
-    def _checkFuncInput(self, batchSize, width, volDepth, irDepth):
+    def _checkFuncInput(self, batchSize, width=None, volDepth=None, irDepth=None):
         if (batchSize is None):
             batchSize = self.batchSize
         if (width is None):
@@ -368,6 +397,27 @@ class DataHandler(object):
             dictToSave = self.testData
 
         for dataType in dictToSave:
+            fileName = self.filePrefix + self._getCurrentRunId() + '_' + fileSuffix + '_' + str(dataType) + ".npy"
+            np.save(fileName, dictToSave[dataType])
+
+    def findTwinFiles(self, fileName):
+        fileList = [fileName]
+        name, prefix, fileType, mode, rest = dbc.breakPath(self.dataFileName)
+        code = re.findall(r'([0-9]{16})',name)
+        if(len(code)>0):
+            code = code[0]
+        for subdir, dirs, files in os.walk(prefix):
+            for f in files:
+                if f.endswith(fileType) and code in f:
+                    fileName = os.path.join(prefix, f)
+                    if(fileName not in fileList):
+                        fileList.append(fileName)
+
+        return fileList
+
+    def _getCurrentRunId(self):
+        if(self.runId is None):
             timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
-            fileName = self.filePrefix + timestamp + '_' + fileSuffix + '_' + str(dataType) + ".npy"
-            np.save(fileName, self.trainData[dataType])
+            self.runId = timestamp
+
+        return self.runId
