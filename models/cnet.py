@@ -13,8 +13,8 @@ class ConvNet(object):
 
     def __init__(self, kernels=[10, 10], strides=[2], fcUnits=[2], poolingLayerFlag=False,
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
-                 weightRegularizers=[tf.contrib.layers.l2_regularizer], architecture=['c', 'f', 'd'],
-                 regularizationStrength=0.001):
+                 weightRegularizer=[tf.contrib.layers.l2_regularizer], architecture=['c', 'f', 'd'],
+                 regularizationStrength=0.001, predictOp=None):
 
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque(fcUnits)
@@ -23,25 +23,28 @@ class ConvNet(object):
         self.poolingFlag = poolingLayerFlag
         self.functionDict = {}
         self.functionDict['init'] = weightInitializer
-        self.functionDict['reg'] = weightRegularizers
+        self.functionDict['reg'] = weightRegularizer
         self.functionDict['act'] = activationFunctions
+        self.predictOp = predictOp
+        self.inChannels = 1
+        self.inKernelSize = 1
 
     def inference(self, x):
         '''
         :param x: expected shape (depth , signalSize)
         :return: [alpha, sigma]
         '''
-        channels = x.shape[3].value
+        self.inChannels = x.shape[3].value
         with tf.variable_scope('ConvNet'):
             with tf.variable_scope('convLayer'):
-                kernelSize = self.kernels.popleft()
-                layer = self._depthWiseConvLayer(x, kernelSize, nbChannels=channels, depth=kernelSize,
+                self.inKernelSize = self.kernels.popleft()
+                layer = self._depthWiseConvLayer(x, self.inKernelSize, nbChannels=self.inChannels,
+                                                 depth=self.inKernelSize,
                                                  activationFunc=self._getFunction('act', 'c'),
                                                  initializer=self._getFunction('init', 'c')())
                 maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.strides.popleft())
                 # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                 tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
-
 
             with tf.variable_scope("flatten"):
                 # layer = tf.contrib.layers.flatten(layer)
@@ -145,3 +148,15 @@ class ConvNet(object):
             tf.summary.scalar('loss_regularized', loss)
 
         return loss
+
+    def predict(self, vol, ir, sess, x_pl):
+        # pdb.set_trace()
+        v = vol.T[:3]
+        i = ir.T[:2]
+        x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0]+ v.shape[0]))
+        # x = x.reshape((1, 1, x.shape[1], x.shape[0]))
+        out = sess.run([self.predictOp], feed_dict={x_pl : x})
+        out  = np.asarray(out)
+        out = out.reshape((1,2))
+
+        return out.tolist()

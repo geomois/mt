@@ -7,6 +7,7 @@ from dataUtils.readData import DataHandler
 import dataUtils.data_utils as du
 import pdb
 import datetime as dt
+import re
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -16,7 +17,7 @@ BATCH_SIZE_DEFAULT = 50
 MAX_STEPS_DEFAULT = 600
 DROPOUT_RATE_DEFAULT = 0.2
 TEST_FREQUENCY_DEFAULT = 300
-CHECKPOINT_FREQ_DEFAULT = 200
+CHECKPOINT_FREQ_DEFAULT = 500
 DNN_HIDDEN_UNITS_DEFAULT = '100'
 BATCH_WIDTH_DEFAULT = 50
 CONVOLUTION_VOL_DEPTH_DEFAULT = '3'
@@ -69,6 +70,8 @@ IR_MODEL = {'hullwhite': inst.hullwhite_analytic,
 # endregion optionDictionaries
 
 FLAGS = None
+tf.set_random_seed(42)
+np.random.seed(42)
 
 
 def trainLSTM(dataHandler):
@@ -81,16 +84,10 @@ def trainLSTM(dataHandler):
         dnn_hidden_units = []
 
 
-def trainCNN(dataHandler):
-    tf.set_random_seed(42)
-    np.random.seed(42)
-
-    if (FLAGS.weight_reg_strength is None):
-        FLAGS.weight_reg_strength = 0.0
-
+def buildCnn(dataHandler):
     testX, testY = dataHandler.getTestData()
-    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]))
-    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]))
+    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
+    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     print("Weight initialization: ", FLAGS.weight_init)
 
     poolingFlag = tf.placeholder(tf.bool)
@@ -102,6 +99,10 @@ def trainCNN(dataHandler):
     optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=FLAGS.learning_rate)
     opt = optimizer.minimize(loss)
 
+    return dataHandler, opt, loss, x_pl, y_pl, testX, testY
+
+
+def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
 
@@ -125,17 +126,18 @@ def trainCNN(dataHandler):
                 test_writer.flush()
                 print("Test set:" "loss=", "{:.2f}".format(out))
             if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
-                saver.save(sess, FLAGS.checkpoint_dir + '/cnn' + str(epoch) + '.ckpt')
-    return cnn
+                saver.save(sess, FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + str(epoch))
 
-def importSavedNN(modelPath):
-    with tf.Session() as sess:
-        # saver = tf.train.import_meta_graph("./tf/checkpoints/cnn1400.ckpt.meta")
-        saver = tf.train.import_meta_graph(modelPath+"meta")
-        graph = tf.get_default_graph()
-        check = tf.train.get_checkpoint_state("./tf/checkpoints/")
-        sess.run(tf.global_variables_initializer())
-        saver.restore(sess, tf.train.latest_checkpoint('./tf/checkpoints/'))
+
+def importSavedNN(session, modelPath, fileName):
+    saver = tf.train.import_meta_graph(modelPath + "/" + fileName + ".meta", clear_devices=True)
+    graph = tf.get_default_graph()
+    check = tf.train.get_checkpoint_state(modelPath)
+    x_pl = graph.get_tensor_by_name("x_pl:0")
+    # x_pl = tf.placeholder(tf.float32, shape=(None, 1, 50, 5))
+    session.run(tf.global_variables_initializer())
+    saver.restore(session, tf.train.latest_checkpoint(modelPath))
+    return tf.get_collection("predict")[0] , x_pl
 
 
 def setupDataHandler():
@@ -150,9 +152,6 @@ def setupDataHandler():
 
 
 def print_flags():
-    """
-    Prints all entries in FLAGS variable.
-    """
     for key, value in vars(FLAGS).items():
         print(key + ' : ' + str(value))
 
@@ -178,7 +177,8 @@ def main(_):
     print_flags()
     initDirectories()
     swo = None
-    # pdb.set_trace()
+    if (FLAGS.weight_reg_strength is None):
+        FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
     if FLAGS.calibrate:
         swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
@@ -187,16 +187,27 @@ def main(_):
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
-            trainCNN(dh)
+            dataHandler, opt, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
+            trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY)
         elif FLAGS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
 
-    # if FLAGS.compare:
-    #     if (FLAGS.nn.lower() == 'cnn'):
-    #         loadCnn(FLAGS.conv_vol_depth, FLAGS.conv_ir_depth)
-    #     swo.compare_history(model)
+    if FLAGS.compare:
+        # if (FLAGS.nn.lower() == 'cnn'):
+        # loadCnn(FLAGS.conv_vol_depth, FLAGS.conv_ir_depth)
+        with tf.Session() as sess:
+            fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
+            directory = FLAGS.model_dir.split(fileName)[0]
+            predictOp,x_pl = importSavedNN(sess, directory, fileName)
+            if (FLAGS.nn_model.lower() == 'cnn'):  # no real reason to do that but to align with AH code
+                model = ConvNet(predictOp=predictOp)
+            elif (FLAGS.nn_model.lower() == 'lstm'):
+                # model = LSTM(predictOp = predictOp)
+                pass
+            swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
+            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess,x_pl=x_pl)
 
 
 if __name__ == '__main__':
