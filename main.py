@@ -3,14 +3,14 @@ import tensorflow as tf
 import numpy as np
 from models.cnet import ConvNet
 import models.instruments as inst
-from dataUtils.readData import DataHandler
+from dataUtils.dataHandler import DataHandler
 import dataUtils.data_utils as du
 import pdb
 import datetime as dt
 import re
 
 # region NNDefaultConstants
-LEARNING_RATE_DEFAULT = 2e-3
+LEARNING_RATE_DEFAULT = 2e-2 #2e-3
 WEIGHT_REGULARIZER_STRENGTH_DEFAULT = 0.001
 WEIGHT_INITIALIZATION_SCALE_DEFAULT = 1e-4
 BATCH_SIZE_DEFAULT = 50
@@ -105,28 +105,31 @@ def buildCnn(dataHandler):
 def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
+    try:
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
+            train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
+            test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
-        train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
-        test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
-
-        for epoch in range(FLAGS.max_steps):
-            batch_x, batch_y = dataHandler.getNextBatch()
-            _, out, merged_sum = sess.run([opt, loss, mergedSummaries], feed_dict={x_pl: batch_x, y_pl: batch_y})
-            if epoch % 50 == 0:
-                train_writer.add_summary(merged_sum, epoch)
-                train_writer.flush()
-                print("====================================================================================")
-                print("Epoch:", '%06d' % (epoch), "loss=", "{:.6f}".format(out))
-            if epoch % FLAGS.test_frequency == 0 and epoch > 0:
-                out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
-                test_writer.add_summary(merged_sum, epoch)
-                test_writer.flush()
-                print("Test set:" "loss=", "{:.2f}".format(out))
-            if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
-                saver.save(sess, FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + str(epoch))
+            for epoch in range(FLAGS.max_steps):
+                batch_x, batch_y = dataHandler.getNextBatch()
+                _, out, merged_sum = sess.run([opt, loss, mergedSummaries], feed_dict={x_pl: batch_x, y_pl: batch_y})
+                if epoch % 50 == 0:
+                    train_writer.add_summary(merged_sum, epoch)
+                    train_writer.flush()
+                    print("====================================================================================")
+                    print("Epoch:", '%06d' % (epoch), "loss=", "{:.6f}".format(out))
+                if epoch % FLAGS.test_frequency == 0 and epoch > 0:
+                    out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
+                    test_writer.add_summary(merged_sum, epoch)
+                    test_writer.flush()
+                    print("Test set:" "loss=", "{:.6f}".format(out))
+                if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
+                    saver.save(sess, FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + str(epoch))
+        tf.reset_default_graph()
+    except:
+        tf.reset_default_graph()
 
 
 def importSavedNN(session, modelPath, fileName):
@@ -244,7 +247,7 @@ if __name__ == '__main__':
                         help='Directory for storing input data')
     parser.add_argument('--processedData', action='store_true', help="Signals that the data is ready to use")
     parser.add_argument('--saveProcessedData', action='store_true', help="Save data being used")
-    parser.add_argument('-cf', '--checkpoint_freq', type=str, default=CHECKPOINT_FREQ_DEFAULT,
+    parser.add_argument('-cf', '--checkpoint_freq', type=int, default=CHECKPOINT_FREQ_DEFAULT,
                         help='How frequently tests will be run')
     parser.add_argument('-tf', '--test_frequency', type=int, default=TEST_FREQUENCY_DEFAULT,
                         help='How frequently tests will be run')

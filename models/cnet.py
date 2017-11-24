@@ -11,23 +11,25 @@ class ConvNet(object):
    in inference.
     """
 
-    def __init__(self, kernels=[10, 10], strides=[2], fcUnits=[2], poolingLayerFlag=False,
+    def __init__(self, kernels=[10, 10], depths=[10, 1], poolStrides=[2], fcUnits=[2], poolingLayerFlag=False,
+                 architecture=['c', 'f', 'd'], volChannels=156, irChannels=44,
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
-                 weightRegularizer=[tf.contrib.layers.l2_regularizer], architecture=['c', 'f', 'd'],
+                 weightRegularizer=[tf.contrib.layers.l2_regularizer],
                  regularizationStrength=0.001, predictOp=None):
 
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque(fcUnits)
-        self.strides = deque(strides)
+        self.poolStrides = deque(poolStrides)
         self.kernels = deque(kernels)
+        self.depths = deque(depths)
         self.poolingFlag = poolingLayerFlag
-        self.functionDict = {}
-        self.functionDict['init'] = weightInitializer
-        self.functionDict['reg'] = weightRegularizer
-        self.functionDict['act'] = activationFunctions
+        self.functionDict = {'init': weightInitializer, 'reg': weightRegularizer, 'act': activationFunctions}
         self.predictOp = predictOp
-        self.inChannels = 1
-        self.inKernelSize = 1
+        self.inChannels = volChannels + irChannels
+        self.volChannels = volChannels
+        self.irChannerls = irChannels
+        self.inKernelSize = self.kernels[0]
+        self.architecture = architecture
 
     def inference(self, x):
         '''
@@ -35,28 +37,43 @@ class ConvNet(object):
         :return: [alpha, sigma]
         '''
         self.inChannels = x.shape[3].value
+        nbChannels = self.inChannels
+        layer = None
+        flatcount = 0
+        densecount = 0
+        convcount = 0
         with tf.variable_scope('ConvNet'):
-            with tf.variable_scope('convLayer'):
-                self.inKernelSize = self.kernels.popleft()
-                layer = self._depthWiseConvLayer(x, self.inKernelSize, nbChannels=self.inChannels,
-                                                 depth=self.inKernelSize,
-                                                 activationFunc=self._getFunction('act', 'c'),
-                                                 initializer=self._getFunction('init', 'c')())
-                maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.strides.popleft())
-                # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
-                tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
-
-            with tf.variable_scope("flatten"):
-                # layer = tf.contrib.layers.flatten(layer)
-                inShape = layer.get_shape().as_list()
-                layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
-                tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
-
-            with tf.variable_scope('denseLayer'):
-                layer = self._denseLayer(layer, self.fcUnits.popleft(), activationFunc=self._getFunction('act', 'd'),
-                                         regularizer=self._getFunction('reg', 'd'),
-                                         initializer=self._getFunction('init', 'd')())
-                tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
+            for i, l in enumerate(self.architecture):
+                if (l.lower() == 'c' or l.lower() == "conv"):
+                    with tf.variable_scope('convLayer' + str(convcount)):
+                        kernelSize = self.kernels.popleft()
+                        depthSize = self.depths.popleft()
+                        if (layer is not None):
+                            pdb.set_trace()
+                            nbChannels = layer.get_shape().as_list()[3]
+                        layer = self._depthWiseConvLayer(x, kernelSize, nbChannels=nbChannels,
+                                                         depth=depthSize,
+                                                         activationFunc=self._getFunction('act', 'c'),
+                                                         initializer=self._getFunction('init', 'c')())
+                        maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
+                        # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
+                        tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
+                    convcount = 0
+                elif (l.lower() == 'f' or l.lower() == "flatten"):
+                    with tf.variable_scope("flatten" + str(flatcount)):
+                        # layer = tf.contrib.layers.flatten(layer)
+                        inShape = layer.get_shape().as_list()
+                        layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
+                        tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
+                    flatcount += 1
+                elif (l.lower() == 'd' or l.lower() == "dense"):
+                    with tf.variable_scope('denseLayer' + str(densecount)):
+                        layer = self._denseLayer(layer, self.fcUnits.popleft(),
+                                                 activationFunc=self._getFunction('act', 'd'),
+                                                 regularizer=self._getFunction('reg', 'd'),
+                                                 initializer=self._getFunction('init', 'd')())
+                        tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
+                    densecount += 1
 
         return layer
 
@@ -73,7 +90,7 @@ class ConvNet(object):
         # kernel [filter_height, filter_width, in_channels, channel_multiplier]
         kernel = tf.get_variable("w", [1, kernelSize, nbChannels, depth], initializer=initializer)
         bias = tf.get_variable("b", depth * nbChannels, initializer=tf.constant_initializer(0))
-        layer = tf.nn.depthwise_conv2d(x, kernel, strides=[1, 1, 1, 1], padding='SAME')
+        layer = tf.nn.depthwise_conv2d(x, kernel, strides=[1, 1, 1, 1], padding='SAME')  # NHWC
         pre_activation = tf.nn.bias_add(layer, bias)
         layer = activationFunc(features=pre_activation, name='activation')
 
@@ -150,13 +167,12 @@ class ConvNet(object):
         return loss
 
     def predict(self, vol, ir, sess, x_pl):
-        # pdb.set_trace()
-        v = vol.T[:3]
-        i = ir.T[:2]
-        x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0]+ v.shape[0]))
+        pdb.set_trace()
+        v = vol.T[:self.volChannels]
+        i = ir.T[:self.irChannerls]
+        x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0] + v.shape[0]))
         # x = x.reshape((1, 1, x.shape[1], x.shape[0]))
-        out = sess.run([self.predictOp], feed_dict={x_pl : x})
-        out  = np.asarray(out)
-        out = out.reshape((1,2))
+        out = sess.run([self.predictOp], feed_dict={x_pl: x})
+        out = np.asarray(out).reshape((1,2))
 
         return out.tolist()

@@ -856,17 +856,18 @@ class SwaptionGen(du.TimeSeriesData):
             self.set_date(date)
             if (session is not None):
                 if (dataLength == 1):
-                    params = predictive_model.predict(self.values, self._ircurve.values, session)
+                    params = predictive_model.predict(self.values, self._ircurve.values, session, x_pl)
                 else:
                     dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                     dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                    params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session,x_pl)
+                    params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
+                    print('\n', params, '\n')
                     dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
                     dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
             else:
                 params = predictive_model.predict((self.values, self._ircurve.values))
 
-            if(type(params) == list):
+            if (type(params) == list):
                 self.model.setParams(ql.Array(params[0]))
             else:
                 self.model.setParams(ql.Array(params.tolist()[0]))
