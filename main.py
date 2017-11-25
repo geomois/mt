@@ -184,7 +184,7 @@ def main(_):
         FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
     if FLAGS.calibrate:
-        swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
+        swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType,volFileName=FLAGS.volFileName,irFileName=FLAGS.irFileName)
         swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
 
     if FLAGS.is_train:

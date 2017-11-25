@@ -185,7 +185,7 @@ class SwaptionGen(du.TimeSeriesData):
                 or not 'name' in self._model_dict:
             raise RuntimeError('Missing parameters')
         self.ccy = index.currency().code()
-        # pdb.set_trace()
+        pdb.set_trace()
         self.model_name = self._model_dict['name'].replace("/", "")
         self.name = 'SWO ' + self.ccy
         if 'file_name' in self._model_dict:
@@ -1206,7 +1206,7 @@ def get_swaptiongen(modelMap=hullwhite_analytic, currency='GBP', irType='Libor',
     if (volFileName is None or irFileName is None):
         swo = SwaptionGen(index, modelMap, parentNode=pNode, irType=irType)
     else:
-        swo = SwaptionGen(index, modelMap, parentNode=None, irType=irType,
+        swo = SwaptionGen(index, modelMap, irType=irType,
                           volData=dbc.toAHFileFormat(volFileName), irData=dbc.toAHFileFormat(irFileName))
     return swo
 
