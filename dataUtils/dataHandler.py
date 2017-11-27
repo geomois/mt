@@ -11,8 +11,9 @@ from sklearn.pipeline import Pipeline
 
 
 class DataHandler(object):
-    def __init__(self, dataFileName='../../data/AH_vol.npy', testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
-                 irDepth=2, sliding=True, useDataPointers=True, save=False):
+    def __init__(self, dataFileName='data/toyData/AH_vol.npy'
+                 , testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
+                 irDepth=2, sliding=True, useDataPointers=True, randomSplit=False, save=False):
         self.modes = ['vol', 'ir', 'params']
         self.dataFileName = dataFileName
         self.batchSize = batchSize
@@ -45,6 +46,7 @@ class DataHandler(object):
         self.saveProcessedData = save
         self.delegatedFromFile = False
         self.runId = None
+        self.randomSpliting = randomSplit
         self._getCurrentRunId()
 
     def readH5(self, fileName):
@@ -131,7 +133,14 @@ class DataHandler(object):
         if (self.useDataPointers):
             dataLength = len(self.dataPointers["vol"])
 
-        self.splitBooleanIndex = np.random.rand(dataLength) < (1 - self.testDataPercentage)
+        if (self.randomSpliting):
+            pdb.set_trace()
+            self.splitBooleanIndex = np.random.rand(dataLength) < (1 - self.testDataPercentage)
+        else:
+            self.splitBooleanIndex = (np.zeros((int(np.floor(dataLength * (1 - self.testDataPercentage))))) == 0)
+            temp = np.zeros((dataLength - self.splitBooleanIndex.shape[0])) != 0
+            self.splitBooleanIndex = np.append(self.splitBooleanIndex, temp)
+
         if (self.useDataPointers):
             testIndices = np.where(self.splitBooleanIndex == False)[0]
             inPut, outPut = self.reshapeFromPointers(width, volDepth=volDepth, irDepth=irDepth, indices=testIndices,
@@ -166,13 +175,14 @@ class DataHandler(object):
                                                              nbBatches=batchSize, train=True)
                     self.trainData["input"] = inPut
                     self.trainData["output"] = outPut
+                    modulo = len(self.dataPointers['vol'])
                 else:
                     self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
                     self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
-                    if(pipeline is not None):
+                    if (pipeline is not None):
                         # pdb.set_trace()
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
-                modulo = len(self.dataPointers['vol'])
+                    modulo = len(self.inputSegments)
 
             trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
@@ -180,7 +190,6 @@ class DataHandler(object):
         else:
             if (self.useDataPointers):
                 modulo = len(self.trainIndices)
-
                 if (self.lastBatchPointer >= len(self.trainData["input"])):
                     batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
                     inPut, outPut = self.reshapeFromPointers(width, volDepth, irDepth, indices=self.trainIndices,
@@ -195,6 +204,7 @@ class DataHandler(object):
                 modulo = len(self.trainData["input"])
             trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+            pdb.set_trace()
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
         return np.asarray(trainX), np.asarray(trainY)
@@ -330,8 +340,8 @@ class DataHandler(object):
             self.prevWidthStartPosition = -1
             traversedFullDataset = True
 
-            print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition,
-                  irStopPosition, widthEndFlag)
+            # print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition,
+            #       irStopPosition, widthEndFlag)
 
         if (pointers):
             volData = (volStartPosition, volStopPosition, startWidthPosition, endWidthPosition)

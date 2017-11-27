@@ -459,6 +459,7 @@ class SwaptionGen(du.TimeSeriesData):
     def __errors(self):
         total_error = 0.0
         with_exception = 0
+        pdb.set_trace()
         errors = np.zeros((1, len(self.helpers)))
         for swaption in range(len(self.helpers)):
             vol = self._quotes[swaption].value()
@@ -497,7 +498,7 @@ class SwaptionGen(du.TimeSeriesData):
             orig_objective = self.model.value(params, self.helpers)
             print('Parameters   : %s ' % self.model.params())
             print('Objective    : %s ' % orig_objective)
-
+            # pdb.set_trace()
             orig_mean_error, errors = self.__errors()
             print('Average error: %s ' % format_vol(orig_mean_error, 4))
             print(dblrule)
@@ -561,7 +562,7 @@ class SwaptionGen(du.TimeSeriesData):
         nb_instruments = len(self.helpers)
         (dates, swo_param_history, swo_error_history) = \
             self.__history(history_start, history_end, history_part, with_error)
-        pdb.set_trace()
+        # pdb.set_trace()
         if ir_pca:
             # Get PCA pipeline & PCA value matrix for IR Curves
             ir_pca = self._ircurve.pca(dates=dates)
@@ -657,7 +658,7 @@ class SwaptionGen(du.TimeSeriesData):
                 print('Processing sample %s' % row)
             # Set term structure
             try:
-                pdb.set_trace()
+                # pdb.set_trace()
                 (x_ir[row, :], curve) = self._ircurve.rebuild(dates[row], ir_draw[row, :])
                 if plot_ir:
                     du.plot_data(self._ircurve.axis(0).values, x_ir[row, :])
@@ -682,7 +683,7 @@ class SwaptionGen(du.TimeSeriesData):
                             indices[row] = False
                             break;
             except RuntimeError as e:
-                pdb.set_trace()
+                # pdb.set_trace()
                 print('Throwing out sample %s. Exception: %s' % (row, e))
 
         if ~np.any(indices):
@@ -861,7 +862,7 @@ class SwaptionGen(du.TimeSeriesData):
                     dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                     dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                     params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
-                    print('\n',i, params, '\n')
+                    print('\n', i, params, '\n')
                     dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
                     dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
             else:
@@ -934,9 +935,8 @@ class SwaptionGen(du.TimeSeriesData):
             vals[i, 3] = (meanErrorAfter - hist_mean_error) / hist_mean_error * 100.0
 
             print('      impO=%s impH=%s impAfterO=%s impAfterH=%s' % (vals[i, 0], vals[i, 1], vals[i, 2], vals[i, 3]))
-        pdb.set_trace()
+        # pdb.set_trace()
         if plot_results:
-
             r = range(vals.shape[0])
             fig = plt.figure(figsize=(16, 16))
             f1 = fig.add_subplot(211)

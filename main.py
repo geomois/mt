@@ -38,8 +38,8 @@ IR_DEFAULT = 'EURIBOR'
 
 # region defaultDirectories
 DATA_DIR_DEFAULT = 'data/data.h5'
-VOL_DATA_DIR_DEFAULT = 'data/_vol.npy'
-IR_DATA_DIR_DEFAULT = 'data/_ir.npy'
+VOL_DATA_DIR_DEFAULT = None # 'data/_vol.npy'
+IR_DATA_DIR_DEFAULT = None #'data/_ir.npy'
 PARAMS_DATA_DIR_DEFAULT = 'data/_params.npy'
 # Directory for tensorflow
 LOG_DIR_DEFAULT = 'tf/logs/'
@@ -205,6 +205,7 @@ def main(_):
         FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
     if FLAGS.calibrate:
+        pdb.set_trace()
         swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType, volFileName=FLAGS.volFileName,
                                    irFileName=FLAGS.irFileName)
         swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
@@ -228,8 +229,7 @@ def main(_):
             fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
             directory = FLAGS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
-            if (FLAGS.nn_model.lower() == 'cnn'):  # no real reason to do that but to align with AH code
-                pdb.set_trace()
+            if (FLAGS.nn_model.lower() == 'cnn'):
                 model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(FLAGS.checkpoint_dir + "/pipeline.pkl"))
             elif (FLAGS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
