@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 
 # region NNDefaultConstants
-LEARNING_RATE_DEFAULT = 2e-2  # 2e-3
+LEARNING_RATE_DEFAULT = 2e-3
 WEIGHT_REGULARIZER_STRENGTH_DEFAULT = 0.001
 WEIGHT_INITIALIZATION_SCALE_DEFAULT = 1e-4
 BATCH_SIZE_DEFAULT = 50
@@ -125,7 +125,9 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
                     print("====================================================================================")
                     print("Epoch:", '%06d' % (epoch), "loss=", "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
-                    testY = pipeline.transform(testY)
+                    if (epoch == FLAGS.test_frequency):
+                        print("Transforming test")
+                        testY = pipeline.transform(testY)
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()

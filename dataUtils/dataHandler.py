@@ -152,7 +152,7 @@ class DataHandler(object):
             if (self.delegatedFromFile):
                 modulo = len(self.trainData["input"])
                 if (pipeline is not None):
-                    pdb.set_trace()
+                    # pdb.set_trace()
                     self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
             else:
                 if ((len(self.inputSegments) == 0 and len(
@@ -170,7 +170,7 @@ class DataHandler(object):
                     self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
                     self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
                     if(pipeline is not None):
-                        pdb.set_trace()
+                        # pdb.set_trace()
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                 modulo = len(self.dataPointers['vol'])
 
@@ -246,7 +246,7 @@ class DataHandler(object):
                 targetSegments = np.vstack((targetSegments, params))
         else:
             raise IndexError()
-        pdb.set_trace()
+        # pdb.set_trace()
         inSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
         return inSegments, targetSegments
 
@@ -272,7 +272,7 @@ class DataHandler(object):
             self.outputSegments = targetSegments
 
     def _mergeReashapeInput(self, vol, ir):
-        pdb.set_trace()
+        # pdb.set_trace()
         inPut = np.column_stack((vol.T, ir.T))
         inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
         return inPut
