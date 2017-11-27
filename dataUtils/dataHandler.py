@@ -7,6 +7,7 @@ import models.instruments as inst
 import os.path
 import pdb
 import datetime as dt
+from sklearn.pipeline import Pipeline
 
 
 class DataHandler(object):
@@ -144,12 +145,15 @@ class DataHandler(object):
         self.testData['input'] = inPut
         self.testData['output'] = outPut
 
-    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None):
+    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.lastBatchPointer == -1):
             self.lastBatchPointer = 0
             if (self.delegatedFromFile):
                 modulo = len(self.trainData["input"])
+                if (pipeline is not None):
+                    pdb.set_trace()
+                    self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
             else:
                 if ((len(self.inputSegments) == 0 and len(
                         self.dataPointers['vol']) == 0) or self.segmentWidth != width):
@@ -165,6 +169,9 @@ class DataHandler(object):
                 else:
                     self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
                     self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+                    if(pipeline is not None):
+                        pdb.set_trace()
+                        self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                 modulo = len(self.dataPointers['vol'])
 
             trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
@@ -186,7 +193,6 @@ class DataHandler(object):
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
-            pdb.set_trace()
             trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
@@ -325,7 +331,7 @@ class DataHandler(object):
             traversedFullDataset = True
 
             print(volStartPosition, volStopPosition, startWidthPosition, endWidthPosition, irStartPosition,
-                  irStopPosition,widthEndFlag)
+                  irStopPosition, widthEndFlag)
 
         if (pointers):
             volData = (volStartPosition, volStopPosition, startWidthPosition, endWidthPosition)

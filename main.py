@@ -8,9 +8,12 @@ import dataUtils.data_utils as du
 import pdb
 import datetime as dt
 import re
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.externals import joblib
 
 # region NNDefaultConstants
-LEARNING_RATE_DEFAULT = 2e-2 #2e-3
+LEARNING_RATE_DEFAULT = 2e-2  # 2e-3
 WEIGHT_REGULARIZER_STRENGTH_DEFAULT = 0.001
 WEIGHT_INITIALIZATION_SCALE_DEFAULT = 1e-4
 BATCH_SIZE_DEFAULT = 50
@@ -111,9 +114,10 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
             timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
+            pipeline = getPipeLine()
 
             for epoch in range(FLAGS.max_steps):
-                batch_x, batch_y = dataHandler.getNextBatch()
+                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline)
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries], feed_dict={x_pl: batch_x, y_pl: batch_y})
                 if epoch % 50 == 0:
                     train_writer.add_summary(merged_sum, epoch)
@@ -121,6 +125,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
                     print("====================================================================================")
                     print("Epoch:", '%06d' % (epoch), "loss=", "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
+                    testY = pipeline.transform(testY)
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
@@ -131,6 +136,8 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
     except:
         tf.reset_default_graph()
 
+    return pipeline
+
 
 def importSavedNN(session, modelPath, fileName):
     saver = tf.train.import_meta_graph(modelPath + "/" + fileName + ".meta", clear_devices=True)
@@ -140,7 +147,7 @@ def importSavedNN(session, modelPath, fileName):
     # x_pl = tf.placeholder(tf.float32, shape=(None, 1, 50, 5))
     session.run(tf.global_variables_initializer())
     saver.restore(session, tf.train.latest_checkpoint(modelPath))
-    return tf.get_collection("predict")[0] , x_pl
+    return tf.get_collection("predict")[0], x_pl
 
 
 def setupDataHandler():
@@ -176,6 +183,18 @@ def getIrModel():
         raise RuntimeError("Unknown IR model")
 
 
+def getPipeLine(fileName=None):
+    if (fileName is None):
+        irModel = getIrModel()
+        transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
+                                                            inv_func=irModel["inverse_transformation"])
+        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', MinMaxScaler())])
+    else:
+        pipeline = joblib.load(fileName)
+
+    return pipeline
+
+
 def main(_):
     print_flags()
     initDirectories()
@@ -184,14 +203,17 @@ def main(_):
         FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
     if FLAGS.calibrate:
-        swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType,volFileName=FLAGS.volFileName,irFileName=FLAGS.irFileName)
+        swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType, volFileName=FLAGS.volFileName,
+                                   irFileName=FLAGS.irFileName)
         swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
 
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
             dataHandler, opt, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
-            trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY)
+            pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY)
+            if (pipeline is not None):
+                joblib.dump(pipeline, FLAGS.checkpoint_dir + "/pipeline.pkl", compress=1)
         elif FLAGS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
@@ -203,14 +225,15 @@ def main(_):
         with tf.Session() as sess:
             fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
             directory = FLAGS.model_dir.split(fileName)[0]
-            predictOp,x_pl = importSavedNN(sess, directory, fileName)
+            predictOp, x_pl = importSavedNN(sess, directory, fileName)
             if (FLAGS.nn_model.lower() == 'cnn'):  # no real reason to do that but to align with AH code
-                model = ConvNet(predictOp=predictOp)
+                pdb.set_trace()
+                model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(FLAGS.checkpoint_dir + "/pipeline.pkl"))
             elif (FLAGS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
             swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
-            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess,x_pl=x_pl)
+            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess, x_pl=x_pl)
 
 
 if __name__ == '__main__':

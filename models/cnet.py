@@ -15,7 +15,7 @@ class ConvNet(object):
                  architecture=['c', 'f', 'd'], volChannels=156, irChannels=44,
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer],
-                 regularizationStrength=0.001, predictOp=None):
+                 regularizationStrength=0.001, predictOp=None, pipeline=None):
 
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque(fcUnits)
@@ -30,6 +30,7 @@ class ConvNet(object):
         self.irChannels = irChannels
         self.inKernelSize = self.kernels[0]
         self.architecture = architecture
+        self.pipeline = pipeline
 
     def inference(self, x):
         '''
@@ -108,8 +109,8 @@ class ConvNet(object):
                                   initializer=initializer)
 
         bias = tf.get_variable("b", [units], initializer=tf.constant_initializer(0.1))
-        layer = tf.add(tf.matmul(x, weights), bias)
-
+        layer = tf.nn.elu(tf.add(tf.matmul(x, weights), bias))
+        # layer = tf.add(tf.matmul(x, weights), bias)
         self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
         self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
         return layer
@@ -167,14 +168,16 @@ class ConvNet(object):
         return loss
 
     def predict(self, vol, ir, sess, x_pl):
-        pdb.set_trace()
-        v = vol[:,:self.volChannels]
+        v = vol[:, :self.volChannels]
         i = ir[:, :self.irChannels]
         x = np.float32(np.column_stack((v, i)))
-        x = x.reshape((1,1,x.shape[0],x.shape[1]))
+        x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         # x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0] + v.shape[0]))
         # x = x.reshape((1, 1, x.shape[1], x.shape[0]))
         out = sess.run([self.predictOp], feed_dict={x_pl: x})
-        out = np.asarray(out).reshape((1,2))
-
+        # out = np.exp(np.asarray(out).reshape((1,2)))
+        out = np.asarray(out).reshape((1, 2))
+        pdb.set_trace()
+        if (self.pipeline is not None):
+            out = self.pipeline.inverse_transform(out)
         return out.tolist()
