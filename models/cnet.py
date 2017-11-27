@@ -27,7 +27,7 @@ class ConvNet(object):
         self.predictOp = predictOp
         self.inChannels = volChannels + irChannels
         self.volChannels = volChannels
-        self.irChannerls = irChannels
+        self.irChannels = irChannels
         self.inKernelSize = self.kernels[0]
         self.architecture = architecture
 
@@ -108,7 +108,7 @@ class ConvNet(object):
                                   initializer=initializer)
 
         bias = tf.get_variable("b", [units], initializer=tf.constant_initializer(0.1))
-        layer = activationFunc(tf.add(tf.matmul(x, weights), bias), name="activation")
+        layer = tf.add(tf.matmul(x, weights), bias)
 
         self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
         self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
@@ -168,9 +168,11 @@ class ConvNet(object):
 
     def predict(self, vol, ir, sess, x_pl):
         pdb.set_trace()
-        v = vol.T[:self.volChannels]
-        i = ir.T[:self.irChannerls]
-        x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0] + v.shape[0]))
+        v = vol[:,:self.volChannels]
+        i = ir[:, :self.irChannels]
+        x = np.float32(np.column_stack((v, i)))
+        x = x.reshape((1,1,x.shape[0],x.shape[1]))
+        # x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0] + v.shape[0]))
         # x = x.reshape((1, 1, x.shape[1], x.shape[0]))
         out = sess.run([self.predictOp], feed_dict={x_pl: x})
         out = np.asarray(out).reshape((1,2))

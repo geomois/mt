@@ -266,6 +266,7 @@ class DataHandler(object):
             self.outputSegments = targetSegments
 
     def _mergeReashapeInput(self, vol, ir):
+        pdb.set_trace()
         inPut = np.column_stack((vol.T, ir.T))
         inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
         return inPut
@@ -290,7 +291,6 @@ class DataHandler(object):
             self._checkLimits(self.prevWidthStartPosition, self.prevWidthStopPosition, step, self.volatilities.shape[1])
 
         if (widthEndFlag):
-            pdb.set_trace()
             self.endOfSeriesCount += 1
         if (not seriesEnd and self.prevVolDepthPosition != -1):
             volStartPosition = self.prevVolStartPosition
