@@ -185,7 +185,7 @@ class SwaptionGen(du.TimeSeriesData):
                 or not 'name' in self._model_dict:
             raise RuntimeError('Missing parameters')
         self.ccy = index.currency().code()
-        pdb.set_trace()
+        # pdb.set_trace()
         self.model_name = self._model_dict['name'].replace("/", "")
         self.name = 'SWO ' + self.ccy
         if 'file_name' in self._model_dict:
@@ -459,7 +459,6 @@ class SwaptionGen(du.TimeSeriesData):
     def __errors(self):
         total_error = 0.0
         with_exception = 0
-        pdb.set_trace()
         errors = np.zeros((1, len(self.helpers)))
         for swaption in range(len(self.helpers)):
             vol = self._quotes[swaption].value()
@@ -827,7 +826,7 @@ class SwaptionGen(du.TimeSeriesData):
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
 
-    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None):
+    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,skip=660):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         store.close()
@@ -848,6 +847,12 @@ class SwaptionGen(du.TimeSeriesData):
         dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
         # pdb.set_trace()
         for i, date in enumerate(dates):
+            if(i<skip):
+                if(i+29 >=skip):
+                    self.set_date(date)
+                    dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                    dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                continue
             if (i + 1 < dataLength):
                 self.set_date(date)
                 dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
@@ -935,7 +940,7 @@ class SwaptionGen(du.TimeSeriesData):
             vals[i, 3] = (meanErrorAfter - hist_mean_error) / hist_mean_error * 100.0
 
             print('      impO=%s impH=%s impAfterO=%s impAfterH=%s' % (vals[i, 0], vals[i, 1], vals[i, 2], vals[i, 3]))
-        # pdb.set_trace()
+        pdb.set_trace()
         if plot_results:
             r = range(vals.shape[0])
             fig = plt.figure(figsize=(16, 16))
@@ -943,6 +948,7 @@ class SwaptionGen(du.TimeSeriesData):
             f1.plot(r, vals[:, 0])
             f2 = fig.add_subplot(212)
             f2.plot(r, vals[:, 1])
+            plt.savefig('cnn6k.png')
         return (dates, values)
 
 

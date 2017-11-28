@@ -29,6 +29,8 @@ WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
 OPTIMIZER_DEFAULT = 'sgd'
+FULLY_CONNECTED_NODES_DEFAULT = ['2']
+DEFAULT_ARCHITECTURE = ['c', 'f', 'd']
 # endregion NNDefaultConstants
 
 # region QLDefaultConstants
@@ -38,8 +40,8 @@ IR_DEFAULT = 'EURIBOR'
 
 # region defaultDirectories
 DATA_DIR_DEFAULT = 'data/data.h5'
-VOL_DATA_DIR_DEFAULT = None # 'data/_vol.npy'
-IR_DATA_DIR_DEFAULT = None #'data/_ir.npy'
+VOL_DATA_DIR_DEFAULT = None  # 'data/_vol.npy'
+IR_DATA_DIR_DEFAULT = None  # 'data/_ir.npy'
 PARAMS_DATA_DIR_DEFAULT = 'data/_params.npy'
 # Directory for tensorflow
 LOG_DIR_DEFAULT = 'tf/logs/'
@@ -94,7 +96,7 @@ def buildCnn(dataHandler):
     print("Weight initialization: ", FLAGS.weight_init)
 
     poolingFlag = tf.placeholder(tf.bool)
-    cnn = ConvNet(poolingLayerFlag=poolingFlag)
+    cnn = ConvNet(poolingLayerFlag=poolingFlag, architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes)
     pred = cnn.inference(x_pl)
     tf.add_to_collection("predict", pred)
     loss = cnn.loss(pred, y_pl)
@@ -109,7 +111,8 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
-        with tf.Session() as sess:
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
+        with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             sess.run(tf.global_variables_initializer())
             timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
@@ -148,7 +151,7 @@ def importSavedNN(session, modelPath, fileName):
     x_pl = graph.get_tensor_by_name("x_pl:0")
     # x_pl = tf.placeholder(tf.float32, shape=(None, 1, 50, 5))
     session.run(tf.global_variables_initializer())
-    saver.restore(session, tf.train.latest_checkpoint(modelPath))
+    saver.restore(session, check.model_checkpoint_path)
     return tf.get_collection("predict")[0], x_pl
 
 
@@ -225,7 +228,8 @@ def main(_):
     if FLAGS.compare:
         # if (FLAGS.nn.lower() == 'cnn'):
         # loadCnn(FLAGS.conv_vol_depth, FLAGS.conv_ir_depth)
-        with tf.Session() as sess:
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+        with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
             directory = FLAGS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
@@ -249,6 +253,10 @@ if __name__ == '__main__':
                         help='Comma separated list of number of convolution depth for volatilities in each layer')
     parser.add_argument('-cid', '--conv_ir_depth', type=str, default=CONVOLUTION_IR_DEPTH_DEFAULT,
                         help='Comma separated list of number of convolution depth for interest rate in each layer')
+    parser.add_argument('-fc', '--fullyConnectedNodes', nargs='+', default=FULLY_CONNECTED_NODES_DEFAULT,
+                        help='Comma separated list of number of dense layer depth')
+    parser.add_argument('-ar', '--architecture', nargs='+', default=DEFAULT_ARCHITECTURE,
+                        help='Comma separated list of characters c->convLayer, l->lstm, f->flatten, d->dense')
     parser.add_argument('-lr', '--learning_rate', type=float, default=LEARNING_RATE_DEFAULT,
                         help='Learning rate')
     parser.add_argument('-ms', '--max_steps', type=int, default=MAX_STEPS_DEFAULT,

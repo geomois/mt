@@ -16,9 +16,9 @@ class ConvNet(object):
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer],
                  regularizationStrength=0.001, predictOp=None, pipeline=None):
-
+        pdb.set_trace()
         self.regularizationStrength = regularizationStrength
-        self.fcUnits = deque(fcUnits)
+        self.fcUnits = deque([int(i) for i in fcUnits])
         self.poolStrides = deque(poolStrides)
         self.kernels = deque(kernels)
         self.depths = deque(depths)
@@ -177,7 +177,6 @@ class ConvNet(object):
         out = sess.run([self.predictOp], feed_dict={x_pl: x})
         # out = np.exp(np.asarray(out).reshape((1,2)))
         out = np.asarray(out).reshape((1, 2))
-        pdb.set_trace()
         if (self.pipeline is not None):
             out = self.pipeline.inverse_transform(out)
         return out.tolist()

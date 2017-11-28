@@ -204,7 +204,6 @@ class DataHandler(object):
                 modulo = len(self.trainData["input"])
             trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
             trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
-            pdb.set_trace()
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
         return np.asarray(trainX), np.asarray(trainY)
