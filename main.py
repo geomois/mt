@@ -219,6 +219,7 @@ def main(_):
             dataHandler, opt, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
             pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY)
             if (pipeline is not None):
+                # TODO:Check for pipeline in checkpoint_dir
                 joblib.dump(pipeline, FLAGS.checkpoint_dir + "/pipeline.pkl", compress=1)
         elif FLAGS.nn_model == 'lstm':
             trainLSTM(dh)
@@ -239,7 +240,7 @@ def main(_):
                 # model = LSTM(predictOp = predictOp)
                 pass
             swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
-            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess, x_pl=x_pl)
+            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess, x_pl=x_pl, skip=FLAGS.skip)
 
 
 if __name__ == '__main__':
@@ -302,6 +303,8 @@ if __name__ == '__main__':
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')
+    parser.add_argument('--skip', type=int, default=0,
+                        help='Skip n first dates in history comparison')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run()
