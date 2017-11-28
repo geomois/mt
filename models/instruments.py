@@ -826,7 +826,7 @@ class SwaptionGen(du.TimeSeriesData):
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
 
-    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,skip=660):
+    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         store.close()
