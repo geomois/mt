@@ -93,7 +93,8 @@ def buildCnn(dataHandler):
     testX, testY = dataHandler.getTestData()
     x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
-    print("Weight initialization: ", FLAGS.weight_init)
+    lr_pl = tf.placeholder(tf.float32, shape=[])
+    # print("Weight initialization: ", FLAGS.weight_init)
 
     poolingFlag = tf.placeholder(tf.bool)
     cnn = ConvNet(poolingLayerFlag=poolingFlag, architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes)
@@ -101,13 +102,13 @@ def buildCnn(dataHandler):
     tf.add_to_collection("predict", pred)
     loss = cnn.loss(pred, y_pl)
     # accuracy=cnn.accuracy(pred,y_pl)
-    optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=FLAGS.learning_rate)
+    optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=lr_pl)
     opt = optimizer.minimize(loss)
 
-    return dataHandler, opt, loss, x_pl, y_pl, testX, testY
+    return dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY
 
 
-def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
+def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
@@ -121,7 +122,9 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
 
             for epoch in range(FLAGS.max_steps):
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline)
-                _, out, merged_sum = sess.run([opt, loss, mergedSummaries], feed_dict={x_pl: batch_x, y_pl: batch_y})
+                # TODO:use adaptive learning rate algo
+                _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
+                                              feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: FLAGS.learning_rate})
                 if epoch % 50 == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
@@ -131,6 +134,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY):
                     if (epoch == FLAGS.test_frequency):
                         print("Transforming test")
                         testY = pipeline.transform(testY)
+
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
@@ -216,8 +220,8 @@ def main(_):
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
-            dataHandler, opt, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
-            pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, testX, testY)
+            dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY = buildCnn(dh)
+            pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY)
             if (pipeline is not None):
                 # TODO:Check for pipeline in checkpoint_dir
                 joblib.dump(pipeline, FLAGS.checkpoint_dir + "/pipeline.pkl", compress=1)

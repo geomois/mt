@@ -154,7 +154,7 @@ class DataHandler(object):
         self.testData['input'] = inPut
         self.testData['output'] = outPut
 
-    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None):
+    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=True):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.lastBatchPointer == -1):
             self.lastBatchPointer = 0
@@ -184,8 +184,15 @@ class DataHandler(object):
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                     modulo = len(self.inputSegments)
 
-            trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
-            trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
+            if (randomDraw):
+                indices = np.random.randit(0, high=len(self.trainData["input"]), size=batchSize)
+                trainX = self.trainData["input"][indices]
+                trainY = self.trainData["output"][indices]
+            else:
+                trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
+                trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
+
+
 
         else:
             if (self.useDataPointers):
@@ -202,11 +209,17 @@ class DataHandler(object):
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
-            trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
-            trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+            if (randomDraw):
+                indices = np.random.randit(0, high=len(self.trainData["input"]), size=batchSize)
+                trainX = self.trainData["input"][indices]
+                trainY = self.trainData["output"][indices]
+            else:
+                trainX = self.trainData["input"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+                trainY = self.trainData["output"][self.lastBatchPointer: self.lastBatchPointer + batchSize]
+
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
-        return np.asarray(trainX), np.asarray(trainY)
+        return np.asarray(np.float32(trainX)), np.asarray(np.float32(trainY))
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
         swo = inst.get_swaptiongen(modelMap=modelMap, currency=currency, irType=irType, volFileName=swoFile,
