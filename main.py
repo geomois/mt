@@ -121,7 +121,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
             pipeline = getPipeLine()
 
             for epoch in range(FLAGS.max_steps):
-                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline)
+                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=True)
                 # TODO:use adaptive learning rate algo
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: FLAGS.learning_rate})
@@ -143,6 +143,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
                     saver.save(sess, FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + str(epoch))
         tf.reset_default_graph()
     except:
+        print("Exception during training")
         tf.reset_default_graph()
 
     return pipeline

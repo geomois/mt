@@ -154,7 +154,7 @@ class DataHandler(object):
         self.testData['input'] = inPut
         self.testData['output'] = outPut
 
-    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=True):
+    def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.lastBatchPointer == -1):
             self.lastBatchPointer = 0
@@ -185,15 +185,12 @@ class DataHandler(object):
                     modulo = len(self.inputSegments)
 
             if (randomDraw):
-                indices = np.random.randit(0, high=len(self.trainData["input"]), size=batchSize)
+                indices = np.random.randint(0, high=len(self.trainData["input"]), size=batchSize)
                 trainX = self.trainData["input"][indices]
                 trainY = self.trainData["output"][indices]
             else:
                 trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
                 trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
-
-
-
         else:
             if (self.useDataPointers):
                 modulo = len(self.trainIndices)
@@ -210,7 +207,7 @@ class DataHandler(object):
             else:
                 modulo = len(self.trainData["input"])
             if (randomDraw):
-                indices = np.random.randit(0, high=len(self.trainData["input"]), size=batchSize)
+                indices = np.random.randint(0, high=len(self.trainData["input"]), size=batchSize)
                 trainX = self.trainData["input"][indices]
                 trainY = self.trainData["output"][indices]
             else:
