@@ -408,13 +408,13 @@ class SwaptionGen(du.TimeSeriesData):
             with pd.HDFStore(fileName) as store:
                 df_model = store[self.key_model]
                 if len(df_model.columns) != len(columns) or \
-                                len(df_model.index) != len(self._dates):
+                        len(df_model.index) != len(self._dates):
                     raise RuntimeError("Incompatible file")
                 rows_model = df_model.values
 
                 df_error = store[self.key_error]
                 if len(df_error.columns) != nb_instruments or \
-                                len(df_error.index) != len(self._dates):
+                        len(df_error.index) != len(self._dates):
                     raise RuntimeError("Incompatible file")
                 rows_error = df_error.values
 
@@ -826,7 +826,8 @@ class SwaptionGen(du.TimeSeriesData):
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
 
-    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,skip=0):
+    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,
+                        skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         store.close()
@@ -847,8 +848,8 @@ class SwaptionGen(du.TimeSeriesData):
         dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
         # pdb.set_trace()
         for i, date in enumerate(dates):
-            if(i<skip):
-                if(i+29 >=skip):
+            if (i < skip):
+                if (i + dataLength - 1 >= skip):
                     self.set_date(date)
                     dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                     dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))

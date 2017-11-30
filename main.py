@@ -121,11 +121,11 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
             pipeline = getPipeLine()
 
             for epoch in range(FLAGS.max_steps):
-                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=True)
+                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
                 # TODO:use adaptive learning rate algo
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: FLAGS.learning_rate})
-                if epoch % 50 == 0:
+                if epoch % FLAGS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     print("====================================================================================")
@@ -308,6 +308,7 @@ if __name__ == '__main__':
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')
+    parser.add_argument('--print_frequency',type=int, default=50, help='Frequency of epoch printing')
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
 

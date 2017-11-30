@@ -108,8 +108,8 @@ class ConvNet(object):
                                   initializer=initializer)
 
         bias = tf.get_variable("b", [units], initializer=tf.constant_initializer(0.1))
-        layer = tf.nn.elu(tf.add(tf.matmul(x, weights), bias))
-        # layer = tf.add(tf.matmul(x, weights), bias)
+        # layer = tf.nn.elu(tf.add(tf.matmul(x, weights), bias))
+        layer = tf.add(tf.matmul(x, weights), bias)
         self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
         self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
         return layer
