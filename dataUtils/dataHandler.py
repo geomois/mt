@@ -429,6 +429,8 @@ class DataHandler(object):
         fileList = [fileName]
         name, prefix, fileType, mode, rest = dbc.breakPath(self.dataFileName)
         code = re.findall(r'([0-9]{16})', name)
+        if(len(code)==0):
+            code = re.findall(r'([0-9]{15})', name)
         if (len(code) > 0):
             code = code[0]
         for subdir, dirs, files in os.walk(prefix):

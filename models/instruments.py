@@ -895,6 +895,8 @@ class SwaptionGen(du.TimeSeriesData):
                 meanErrorAfter = np.nan
                 paramsC = np.empty((5))
                 paramsC[:] = np.nan
+                objectiveAfter = np.nan
+                meanErrorAfter = np.nan
 
             orig_mean_error = df.ix[date, 'OrigMeanError']
             hist_mean_error = df.ix[date, 'HistMeanError']
