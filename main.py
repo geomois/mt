@@ -138,7 +138,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     print("====================================================================================")
-                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06d' % (learningRate), "loss=",
+                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (learningRate), "loss=",
                           "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
                     if (epoch == FLAGS.test_frequency):
@@ -260,7 +260,12 @@ def main(_):
                 # model = LSTM(predictOp = predictOp)
                 pass
             swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
-            swo.compare_history(model, dataLength=FLAGS.batch_width, session=sess, x_pl=x_pl, skip=FLAGS.skip)
+            _, values, vals, params = swo.compare_history(model, modelName, dataLength=FLAGS.batch_width, session=sess,
+                                                          x_pl=x_pl, skip=FLAGS.skip, plot_results=False)
+
+            np.save(FLAGS.checkpoint_dir + modelName + "Values.npy", values)
+            np.save(FLAGS.checkpoint_dir + modelName + "Vals.npy", vals)
+            np.save(FLAGS.checkpoint_dir + modelName + "Params.npy", params)
 
 
 if __name__ == '__main__':
