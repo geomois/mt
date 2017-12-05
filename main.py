@@ -1,4 +1,5 @@
 import argparse
+import os
 import tensorflow as tf
 import numpy as np
 from models.cnet import ConvNet
@@ -112,7 +113,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.4)
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             sess.run(tf.global_variables_initializer())
             timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
@@ -120,7 +121,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
             test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
             pipeline = getPipeLine()
             global_step = tf.Variable(0, trainable=False)
-            if (FLAGS.trainingDecay > 0):
+            if (FLAGS.decay_rate > 0):
                 learningRate = tf.train.exponential_decay(learning_rate=FLAGS.learning_rate, global_step=global_step,
                                                           decay_steps=FLAGS.decay_frequency,
                                                           decay_rate=FLAGS.decay_rate, staircase=FLAGS.staircase)
@@ -148,7 +149,9 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
                 if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
-                    saver.save(sess, FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + str(epoch))
+                    file = FLAGS.checkpoint_dir + FLAGS.nn_model + "_a" + ''.join(FLAGS.architecture) + "_w" + str(
+                        FLAGS.batch_width) + "/"
+                    saver.save(sess, file + str(epoch))
         tf.reset_default_graph()
     except:
         print("Exception during training")
@@ -232,8 +235,12 @@ def main(_):
             dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY = buildCnn(dh)
             pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY)
             if (pipeline is not None):
-                # TODO:Check for pipeline in checkpoint_dir
-                joblib.dump(pipeline, FLAGS.checkpoint_dir + "/pipeline.pkl", compress=1)
+                pipelinePath = FLAGS.checkpoint_dir + FLAGS.nn_model + "_A" + ''.join(
+                    FLAGS.architecture).lower() + "_w" + str(FLAGS.batch_width)
+                if (not os.path.exists(pipelinePath)):
+                    os.makedirs(pipelinePath)
+                joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
+
         elif FLAGS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
@@ -248,7 +255,9 @@ def main(_):
             directory = FLAGS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
             if (FLAGS.nn_model.lower() == 'cnn'):
-                model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(FLAGS.checkpoint_dir + "/pipeline.pkl"))
+                pipelinePath = FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + "_a" + ''.join(
+                    FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "/pipeline.pkl"
+                model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(pipelinePath))
             elif (FLAGS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
