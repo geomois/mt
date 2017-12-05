@@ -119,17 +119,25 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
             train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
             pipeline = getPipeLine()
+            global_step = tf.Variable(0, trainable=False)
+            if (FLAGS.trainingDecay > 0):
+                learningRate = tf.train.exponential_decay(learning_rate=FLAGS.learning_rate, global_step=global_step,
+                                                          decay_steps=FLAGS.decay_frequency,
+                                                          decay_rate=FLAGS.decay_rate, staircase=FLAGS.staircase)
+            else:
+                learningRate = FLAGS.learning_rate
 
             for epoch in range(FLAGS.max_steps):
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
-                # TODO:use adaptive learning rate algo
+                global_step = epoch
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
-                                              feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: FLAGS.learning_rate})
+                                              feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: learningRate})
                 if epoch % FLAGS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     print("====================================================================================")
-                    print("Epoch:", '%06d' % (epoch), "loss=", "{:.6f}".format(out))
+                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06d' % (learningRate), "loss=",
+                          "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
                     if (epoch == FLAGS.test_frequency):
                         print("Transforming test")
@@ -308,9 +316,15 @@ if __name__ == '__main__':
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')
-    parser.add_argument('--print_frequency',type=int, default=50, help='Frequency of epoch printing')
+    parser.add_argument('--print_frequency', type=int, default=50, help='Frequency of epoch printing')
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
+    # TODO:pipeline
+    parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
+
+    parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
+    parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
+    parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run()

@@ -59,7 +59,8 @@ class DataHandler(object):
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
-            suffix = 'test' + str(self.batchSize) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+            suffix = 'test' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
+                self.volDepth) + '_' + str(self.irDepth)
             self._saveProcessedData(suffix, 'test')
 
         return np.asarray(self.testData["input"]), np.asarray(self.testData['output'])
@@ -202,7 +203,8 @@ class DataHandler(object):
                     self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
-                    suffix = 'train' + str(self.batchSize) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+                    suffix = 'train' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
+                        self.volDepth) + '_' + str(self.irDepth)
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])

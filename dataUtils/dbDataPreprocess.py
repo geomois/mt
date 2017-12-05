@@ -46,6 +46,15 @@ def shortTenorToQLDate(evaluationDate, series):
     return qlDates
 
 
+def simplePlotVals(vals, ax, end=0, labels=["meanErrorConv", "meanErrorFnn", "meanErrorQL"]):
+    if (ax is None):
+        ax = np.arange((vals[0].shape[0]))
+    for i in range(vals.shape[0]):
+        plt.plot(ax, vals[i][:, :end], label=labels[i])
+    plt.grid()
+    plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
+
+
 def plotGroups(dat, xLabels, groupByColumn='X', columnToPlot='Z', sortValue='Date', scatter=False, start=-1, end=10):
     g = dat.groupby(groupByColumn)
     ax = xLabels
@@ -132,7 +141,7 @@ def cleanCsv(path, mode='vol', toNNData=False, exportPath=None, dbFormat=False):
     # pdb.set_trace()
     df = shortClean(df, hasDuplicates=True)
     paramFlag = False
-    if(mode != 'params'):
+    if (mode != 'params'):
         df, terms = fixColumnNamesAndFieldFormats(df, dbFormat=dbFormat)
     else:
         terms = [i for i in df.columns if (i.lower() != 'date')]
@@ -182,7 +191,7 @@ def fixColumnNamesAndFieldFormats(df, dbFormat=False):
     return df, terms
 
 
-def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params = False):
+def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params=False):
     '''
     :param dFrame: pandas dataframe with columns [Date, Term, Value] or [Date, Term1, Term2, Value]
                     or [Date, Alpha, Sigma]
@@ -193,7 +202,7 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params = False):
     dat = None
     low = [i.lower() for i in groupingColumns]
     # if ('alpha' in low or 'sigma' in low):
-    if(params):
+    if (params):
         dat = np.zeros((dFrame.shape[0]))
         for c in groupingColumns:
             dat = np.vstack((dat, dFrame[c].copy().as_matrix()))
