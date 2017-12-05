@@ -76,6 +76,7 @@ IR_MODEL = {'hullwhite': inst.hullwhite_analytic,
 # endregion optionDictionaries
 
 FLAGS = None
+modelName = None
 tf.set_random_seed(42)
 np.random.seed(42)
 
@@ -127,7 +128,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
                                                           decay_rate=FLAGS.decay_rate, staircase=FLAGS.staircase)
             else:
                 learningRate = FLAGS.learning_rate
-
+            checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
             for epoch in range(FLAGS.max_steps):
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
                 global_step = epoch
@@ -149,9 +150,7 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
                 if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
-                    file = FLAGS.checkpoint_dir + FLAGS.nn_model + "_a" + ''.join(FLAGS.architecture) + "_w" + str(
-                        FLAGS.batch_width) + "/"
-                    saver.save(sess, file + str(epoch))
+                    saver.save(sess, checkpointFolder + str(epoch))
         tf.reset_default_graph()
     except:
         print("Exception during training")
@@ -255,8 +254,7 @@ def main(_):
             directory = FLAGS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
             if (FLAGS.nn_model.lower() == 'cnn'):
-                pipelinePath = FLAGS.checkpoint_dir + '/' + FLAGS.nn_model + "_a" + ''.join(
-                    FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "/pipeline.pkl"
+                pipelinePath = FLAGS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
                 model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(pipelinePath))
             elif (FLAGS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
@@ -328,12 +326,11 @@ if __name__ == '__main__':
     parser.add_argument('--print_frequency', type=int, default=50, help='Frequency of epoch printing')
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
-    # TODO:pipeline
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
-
     parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
 
     FLAGS, unparsed = parser.parse_known_args()
+    modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width)
     tf.app.run()

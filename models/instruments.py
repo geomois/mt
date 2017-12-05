@@ -826,8 +826,8 @@ class SwaptionGen(du.TimeSeriesData):
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
 
-    def compare_history(self, predictive_model, dates=None, plot_results=True, dataLength=1, session=None, x_pl=None,
-                        skip=0):
+    def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, session=None,
+                        x_pl=None, skip=0, fullTest=False):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         store.close()
@@ -883,13 +883,18 @@ class SwaptionGen(du.TimeSeriesData):
                 objectivePrior = self.model.value(self.model.params(), self.helpers)
             except RuntimeError:
                 objectivePrior = np.nan
-            self.model.calibrate(self.helpers, method, end_criteria, constraint)
-            meanErrorAfter, _ = self.__errors()
-            paramsC = self.model.params()
-            try:
-                objectiveAfter = self.model.value(self.model.params(), self.helpers)
-            except RuntimeError:
-                objectiveAfter = np.nan
+            if (fullTest):
+                self.model.calibrate(self.helpers, method, end_criteria, constraint)
+                meanErrorAfter, _ = self.__errors()
+                paramsC = self.model.params()
+                try:
+                    objectiveAfter = self.model.value(self.model.params(), self.helpers)
+                except RuntimeError:
+                    objectiveAfter = np.nan
+            else:
+                meanErrorAfter = np.nan
+                paramsC = np.empty((5))
+                paramsC[:] = np.nan
 
             orig_mean_error = df.ix[date, 'OrigMeanError']
             hist_mean_error = df.ix[date, 'HistMeanError']
@@ -949,8 +954,8 @@ class SwaptionGen(du.TimeSeriesData):
             f1.plot(r, vals[:, 0])
             f2 = fig.add_subplot(212)
             f2.plot(r, vals[:, 1])
-            plt.savefig('cnn6k.png')
-        return (dates, values)
+            plt.savefig(modelName + '.png')
+        return (dates, values, vals, params)
 
 
 class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):
