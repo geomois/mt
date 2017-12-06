@@ -95,7 +95,6 @@ def buildCnn(dataHandler):
     testX, testY = dataHandler.getTestData()
     x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
-    lr_pl = tf.placeholder(tf.float32, shape=[])
     # print("Weight initialization: ", FLAGS.weight_init)
 
     poolingFlag = tf.placeholder(tf.bool)
@@ -104,13 +103,11 @@ def buildCnn(dataHandler):
     tf.add_to_collection("predict", pred)
     loss = cnn.loss(pred, y_pl)
     # accuracy=cnn.accuracy(pred,y_pl)
-    optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=lr_pl)
-    opt = optimizer.minimize(loss)
 
-    return dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY
+    return dataHandler, loss, x_pl, y_pl, testX, testY
 
 
-def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
+def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
@@ -124,16 +121,21 @@ def trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY):
             global_step = tf.Variable(0, trainable=False)
             if (FLAGS.decay_rate > 0):
                 learningRate = tf.train.exponential_decay(learning_rate=FLAGS.learning_rate, global_step=global_step,
-                                                          decay_steps=FLAGS.decay_frequency,
-                                                          decay_rate=FLAGS.decay_rate, staircase=FLAGS.staircase)
+                                                          decay_steps=FLAGS.decay_steps,
+                                                          decay_rate=FLAGS.decay_rate, staircase=FLAGS.decay_staircase)
             else:
                 learningRate = FLAGS.learning_rate
+
+            pdb.set_trace()
+            optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=learningRate)
+            opt = optimizer.minimize(loss)
+            
             checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
             for epoch in range(FLAGS.max_steps):
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
                 global_step = epoch
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
-                                              feed_dict={x_pl: batch_x, y_pl: batch_y, lr_pl: learningRate})
+                                              feed_dict={x_pl: batch_x, y_pl: batch_y})
                 if epoch % FLAGS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
@@ -231,8 +233,8 @@ def main(_):
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
-            dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY = buildCnn(dh)
-            pipeline = trainNN(dataHandler, opt, loss, x_pl, y_pl, lr_pl, testX, testY)
+            dataHandler, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
+            pipeline = trainNN(dataHandler, loss, x_pl, y_pl, testX, testY)
             if (pipeline is not None):
                 pipelinePath = FLAGS.checkpoint_dir + FLAGS.nn_model + "_A" + ''.join(
                     FLAGS.architecture).lower() + "_w" + str(FLAGS.batch_width)
