@@ -249,6 +249,7 @@ class SwaptionGen(du.TimeSeriesData):
         self.values = None
 
     def set_date(self, date):
+        pdb.set_trace()
         # Set Reference Date
         ts = pd.Timestamp(date)
         dt = ql.Date(ts.day, ts.month, ts.year)
@@ -455,6 +456,28 @@ class SwaptionGen(du.TimeSeriesData):
             df_model[['OrigParam0', 'OrigParam1']].to_csv(csvFilePath)
 
         return df_model[['OrigParam0', 'OrigParam1']].copy()
+
+    def calibrateOnce(self, date, alpha):
+        self.set_date(date)
+        try:
+            pdb.set_trace()
+            self.model.setParams(ql.Array([alpha, self._default_params[1]]))
+            self.model.calibrate(self.helpers, self.method,
+                                 self.end_criteria, self.constraint, [], [True, False])
+            # calibrate only sigma
+
+            params = self.model.params()
+            orig_objective = self.model.value(params, self.helpers)
+            orig_mean_error, errors = self.__errors()
+        except RuntimeError as e:
+            pdb.set_trace()
+            print("Error: %s" % e)
+            orig_objective = float("inf")
+            orig_mean_error = float("inf")
+            errors = np.zeros((1, len(self.helpers)))
+        avgError, _ = self.__errors()
+
+        return avgError
 
     def __errors(self):
         total_error = 0.0

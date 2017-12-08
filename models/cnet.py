@@ -5,16 +5,10 @@ import pdb
 
 
 class ConvNet(object):
-    """
-   This class implements a convolutional neural network in TensorFlow.
-   It incorporates a certain graph model to be trained and to be used
-   in inference.
-    """
-
-    def __init__(self, kernels=[10, 10], depths=[10, 1], poolStrides=[2], fcUnits=[2], poolingLayerFlag=False,
-                 architecture=['c', 'f', 'd'], volChannels=156, irChannels=44,
+    def __init__(self, volChannels, irChannels, kernels=[10, 10], depths=[10, 1], poolStrides=[2], fcUnits=[2],
+                 poolingLayerFlag=False, architecture=['c', 'f', 'd'],
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
-                 weightRegularizer=[tf.contrib.layers.l2_regularizer],
+                 weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
                  regularizationStrength=0.001, predictOp=None, pipeline=None):
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque([int(i) for i in fcUnits])
@@ -30,6 +24,7 @@ class ConvNet(object):
         self.inKernelSize = self.kernels[0]
         self.architecture = architecture
         self.pipeline = pipeline
+        self.calibrationFunc = calibrationFunc
 
     def inference(self, x):
         '''
@@ -166,15 +161,18 @@ class ConvNet(object):
 
         return loss
 
+    def calibrationLoss(self, ):
+        pass
+
     def predict(self, vol, ir, sess, x_pl):
-        v = vol[:, :self.volChannels]
-        i = ir[:, :self.irChannels]
-        x = np.float32(np.column_stack((v, i)))
+        x = np.empty((0, self.volChannels + self.irChannels))
+        if (self.volChannels > 0):
+            x = np.float32(vol[:, :self.volChannels])
+        if (self.irChannels > 0):
+            x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
+
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
-        # x = np.vstack((v, i)).T.reshape((1, 1, i.shape[1], i.shape[0] + v.shape[0]))
-        # x = x.reshape((1, 1, x.shape[1], x.shape[0]))
         out = sess.run([self.predictOp], feed_dict={x_pl: x})
-        # out = np.exp(np.asarray(out).reshape((1,2)))
         out = np.asarray(out).reshape((1, 2))
         if (self.pipeline is not None):
             out = self.pipeline.inverse_transform(out)

@@ -24,8 +24,8 @@ TEST_FREQUENCY_DEFAULT = 300
 CHECKPOINT_FREQ_DEFAULT = 500
 DNN_HIDDEN_UNITS_DEFAULT = '100'
 BATCH_WIDTH_DEFAULT = 50
-CONVOLUTION_VOL_DEPTH_DEFAULT = '3'
-CONVOLUTION_IR_DEPTH_DEFAULT = '2'
+CONVOLUTION_VOL_DEPTH_DEFAULT = '156'
+CONVOLUTION_IR_DEPTH_DEFAULT = '44'
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
@@ -91,34 +91,43 @@ def trainLSTM(dataHandler):
         dnn_hidden_units = []
 
 
-def buildCnn(dataHandler):
+def buildCnn(dataHandler, swaptionGen=None):
     testX, testY = dataHandler.getTestData()
     x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
-    # print("Weight initialization: ", FLAGS.weight_init)
-
     poolingFlag = tf.placeholder(tf.bool)
-    cnn = ConvNet(poolingLayerFlag=poolingFlag, architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes)
+    pipeline = None
+    if (FLAGS.use_pipeline):
+        pipeline = dataHandler.fitPipeline(getPipeLine())
+
+    cnn = ConvNet(volChannels=FLAGS.conv_vol_depth, irChannels=FLAGS.conv_ir_depth, poolingLayerFlag=poolingFlag,
+                  architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes, pipeline=pipeline,
+                  calibrationFunc=swaptionGen.calibrate)
     pred = cnn.inference(x_pl)
     tf.add_to_collection("predict", pred)
-    loss = cnn.loss(pred, y_pl)
-    # accuracy=cnn.accuracy(pred,y_pl)
+    if (FLAGS.use_calibration_loss):
+        y_pl = tf.placeholder(tf.int32, shape=(None, testY.shape[1]), name="y_pl")
+        loss = cnn.calibrationLoss(pred, y_pl)
+    else:
+        loss = cnn.loss(pred, y_pl)
 
     return dataHandler, loss, x_pl, y_pl, testX, testY
 
 
-def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY):
+def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, pipeline=None):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+        global_step = tf.Variable(0, trainable=False)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             sess.run(tf.global_variables_initializer())
-            timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
+            timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
-            pipeline = getPipeLine()
-            global_step = tf.Variable(0, trainable=False)
+            if (pipeline is None):
+                pipeline = getPipeLine()
+
             if (FLAGS.decay_rate > 0):
                 learningRate = tf.train.exponential_decay(learning_rate=FLAGS.learning_rate, global_step=global_step,
                                                           decay_steps=FLAGS.decay_steps,
@@ -126,21 +135,20 @@ def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY):
             else:
                 learningRate = FLAGS.learning_rate
 
-            pdb.set_trace()
             optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=learningRate)
             opt = optimizer.minimize(loss)
-            
+
             checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
             for epoch in range(FLAGS.max_steps):
+                sess.run(global_step.assign(epoch))
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
-                global_step = epoch
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y})
                 if epoch % FLAGS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     print("====================================================================================")
-                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (learningRate), "loss=",
+                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (learningRate.eval()), "loss=",
                           "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
                     if (epoch == FLAGS.test_frequency):
@@ -175,7 +183,7 @@ def importSavedNN(session, modelPath, fileName):
 def setupDataHandler():
     dataHandler = DataHandler(dataFileName=FLAGS.volFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
                               volDepth=int(FLAGS.conv_vol_depth[0]), irDepth=int(FLAGS.conv_ir_depth[0]),
-                              save=FLAGS.saveProcessedData)
+                              useDataPointers=FLAGS.use_calibration_loss, save=FLAGS.saveProcessedData)
     if (FLAGS.processedData):
         fileList = dataHandler.findTwinFiles(FLAGS.volFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
@@ -224,24 +232,22 @@ def main(_):
     if (FLAGS.weight_reg_strength is None):
         FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
-    if FLAGS.calibrate:
-        pdb.set_trace()
+    if (FLAGS.calibrate or FLAGS.use_calibration_loss):
         swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType, volFileName=FLAGS.volFileName,
                                    irFileName=FLAGS.irFileName)
-        swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
+        if FLAGS.calibrate:
+            swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
 
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
-            dataHandler, loss, x_pl, y_pl, testX, testY = buildCnn(dh)
-            pipeline = trainNN(dataHandler, loss, x_pl, y_pl, testX, testY)
+            dataHandler, loss, x_pl, y_pl, testX, testY, date_pl = buildCnn(dh, swaptionGen=swo)
+            pipeline = trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, date_pl)
             if (pipeline is not None):
-                pipelinePath = FLAGS.checkpoint_dir + FLAGS.nn_model + "_A" + ''.join(
-                    FLAGS.architecture).lower() + "_w" + str(FLAGS.batch_width)
+                pipelinePath = FLAGS.checkpoint_dir + modelName
                 if (not os.path.exists(pipelinePath)):
                     os.makedirs(pipelinePath)
                 joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
-
         elif FLAGS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
@@ -337,7 +343,10 @@ if __name__ == '__main__':
     parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
+    parser.add_argument('--gpu_memory_fraction', type=float, default=0.3, help='Percentage of gpu memory to use')
+    parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
 
     FLAGS, unparsed = parser.parse_known_args()
-    modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width)
+    modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "_v" + str(
+        FLAGS.conv_vol_depth) + "_ir" + (FLAGS.conv_ir_depth)
     tf.app.run()

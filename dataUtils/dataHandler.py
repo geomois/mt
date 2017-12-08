@@ -1,19 +1,16 @@
-import pandas as pd
 import numpy as np
 import re
-import dataUtils.data_utils as du
 import dataUtils.dbDataPreprocess as dbc
 import models.instruments as inst
 import os.path
 import pdb
 import datetime as dt
-from sklearn.pipeline import Pipeline
 
 
 class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
                  , testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
-                 irDepth=2, sliding=True, useDataPointers=True, randomSplit=False, save=False):
+                 irDepth=2, sliding=True, useDataPointers=True, randomSplit=False, datePointer=False, save=False):
         self.modes = ['vol', 'ir', 'params']
         self.dataFileName = dataFileName
         self.batchSize = batchSize
@@ -27,6 +24,7 @@ class DataHandler(object):
         self.trainData = {"input": [], "output": []}
         self.useDataPointers = useDataPointers
         self.trainIndices = []
+        self.datePointer = datePointer
 
         self.endOfSeriesCount = 0
         self.prevIrStartPosition = -1
@@ -152,8 +150,12 @@ class DataHandler(object):
             inPut = self.inputSegments[~self.splitBooleanIndex]
             outPut = self.outputSegments[~self.splitBooleanIndex]
 
+        if (self.datePointer and not self.randomSplitting):
+            firstTestPoint = int(np.floor(dataLength * (1 - self.testDataPercentage)))
+            self.testData['output'] = np.int32(np.arange(firstTestPoint, firstTestPoint + len(self.testData['output'])))
+        else:
+            self.testData['output'] = outPut
         self.testData['input'] = inPut
-        self.testData['output'] = outPut
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
@@ -184,7 +186,6 @@ class DataHandler(object):
                         # pdb.set_trace()
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                     modulo = len(self.inputSegments)
-
             if (randomDraw):
                 indices = np.random.randint(0, high=len(self.trainData["input"]), size=batchSize)
                 trainX = self.trainData["input"][indices]
@@ -219,6 +220,12 @@ class DataHandler(object):
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
         return np.asarray(np.float32(trainX)), np.asarray(np.float32(trainY))
+
+    def fitPipeline(self, pipeline):
+        if (self.useDataPointers and len(self.trainData['output']) == 0):
+            self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+        pipeline.fit_transform(self.trainData["output"])
+        return pipeline
 
     def createCalibrateParams(self, swoFile, irFile, modelMap, currency, irType):
         swo = inst.get_swaptiongen(modelMap=modelMap, currency=currency, irType=irType, volFileName=swoFile,
@@ -429,7 +436,7 @@ class DataHandler(object):
         fileList = [fileName]
         name, prefix, fileType, mode, rest = dbc.breakPath(self.dataFileName)
         code = re.findall(r'([0-9]{16})', name)
-        if(len(code)==0):
+        if (len(code) == 0):
             code = re.findall(r'([0-9]{15})', name)
         if (len(code) > 0):
             code = code[0]
