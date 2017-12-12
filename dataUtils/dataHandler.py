@@ -9,8 +9,9 @@ import datetime as dt
 
 class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
-                 , testDataPercentage=0.2, batchSize=50, width=50, volDepth=3,
-                 irDepth=2, sliding=True, useDataPointers=True, randomSplit=False, datePointer=False, save=False):
+                 , testDataPercentage=0.2, batchSize=50, width=50, volDepth=156,
+                 irDepth=44, sliding=True, useDataPointers=True, randomSplit=False, datePointer=False, save=False,
+                 specialFilePrefix="", predictiveShape=None):
         self.modes = ['vol', 'ir', 'params']
         self.dataFileName = dataFileName
         self.batchSize = batchSize
@@ -45,16 +46,18 @@ class DataHandler(object):
         self.delegatedFromFile = False
         self.runId = None
         self.randomSpliting = randomSplit
+        self.specialPrefix = specialFilePrefix
+        # predictive tuple (label = "vol" or "ir", [inputDepth, outputDepth])
+        self.predictive = predictiveShape
         self._getCurrentRunId()
-
-    def readH5(self, fileName):
-        raise NotImplemented()
 
     def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         if (len(self.testData["input"]) == 0):
             # pdb.set_trace()
             batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
+            if (self.predictive is not None):
+                self._feedTransform('test')
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
             suffix = 'test' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
@@ -88,8 +91,6 @@ class DataHandler(object):
             for path, mode in fileList:
                 # pdb.set_trace()
                 self._setDataFiles(np.load(path), mode)
-        elif fileType.lower() == 'h5':
-            raise NotImplemented()
 
         if (self.params is None):
             return 1
@@ -193,6 +194,9 @@ class DataHandler(object):
             else:
                 trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
                 trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
+
+            if (self.predictive is not None and not self.useDataPointers):
+                self._feedTransform('train')
         else:
             if (self.useDataPointers):
                 modulo = len(self.trainIndices)
@@ -204,7 +208,8 @@ class DataHandler(object):
                     self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
-                    suffix = 'train' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
+                    suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
+                        self.segmentWidth) + '_' + str(
                         self.volDepth) + '_' + str(self.irDepth)
                     self._saveProcessedData(suffix, 'train')
             else:
@@ -220,6 +225,32 @@ class DataHandler(object):
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
         return np.asarray(np.float32(trainX)), np.asarray(np.float32(trainY))
+
+    def _feedTransform(self, data):
+        """
+        :param x: nn sliding input
+        :return: reshaped  x, y
+        """
+        if (data.lower() == "train"):
+            targetDict = self.trainData
+        else:
+            targetDict = self.testData
+
+        mode = self.predictive[0]
+        inDepth = int(self.predictive[1][0])  # should always be
+        outDepth = int(self.predictive[1][1])
+        targetShape = np.asarray(targetDict['input']).shape
+        if (mode.lower() is self.modes[0]):
+            start = 0
+            end = self.volDepth
+        else:
+            start = self.volDepth
+            end = targetShape[3]
+        if (outDepth > targetShape[2]):
+            outDepth = targetShape[2]
+
+        targetDict['output'] = targetDict['input'][1:, :, :outDepth, start:end]  # skip first
+        targetDict['input'] = targetDict['input'][:targetShape - 1, :, :, start:end]  # skip last
 
     def fitPipeline(self, pipeline):
         if (self.useDataPointers and len(self.trainData['output']) == 0):
@@ -249,12 +280,8 @@ class DataHandler(object):
         elif (mode.lower() == 'params'):
             self.params = data
 
-    def preprocess(self, x_train, y_train, x_test, y_test):
-        raise NotImplemented()
-
     def reshapeFromPointers(self, width, volDepth, irDepth, indices, startPointer=0, nbBatches=10, train=False,
                             fromPointers=True):
-        # TODO: multithread reshape
         # pdb.set_trace()
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, self.params.shape[0]))

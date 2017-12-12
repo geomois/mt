@@ -10,6 +10,7 @@ class ConvNet(object):
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
                  regularizationStrength=0.001, predictOp=None, pipeline=None):
+
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque([int(i) for i in fcUnits])
         self.poolStrides = deque(poolStrides)

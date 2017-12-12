@@ -181,9 +181,21 @@ def importSavedNN(session, modelPath, fileName):
 
 
 def setupDataHandler():
+    if (FLAGS.predictiveShape is not None):
+        if (FLAGS.volFileName is not None):
+            mode = 'vol'
+        elif (FLAGS.irFileName is not None):
+            mode = 'ir'
+        predShape = (mode, FLAGS.predictiveShape)
+        specialFilePrefix = "_M" + mode + ''.join(FLAGS.predictiveShape)
+    else:
+        predShape = None
+        specialFilePrefix = ''
     dataHandler = DataHandler(dataFileName=FLAGS.volFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
                               volDepth=int(FLAGS.conv_vol_depth[0]), irDepth=int(FLAGS.conv_ir_depth[0]),
-                              useDataPointers=FLAGS.use_calibration_loss, save=FLAGS.saveProcessedData)
+                              useDataPointers=FLAGS.use_calibration_loss, save=FLAGS.saveProcessedData,
+                              specialFilePrefix=specialFilePrefix, predictiveShape=predShape)
+
     if (FLAGS.processedData):
         fileList = dataHandler.findTwinFiles(FLAGS.volFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
@@ -345,6 +357,8 @@ if __name__ == '__main__':
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
     parser.add_argument('--gpu_memory_fraction', type=float, default=0.3, help='Percentage of gpu memory to use')
     parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
+    parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
+                        help='Comma separated list of numbers for the input and output depth of the nn')
 
     FLAGS, unparsed = parser.parse_known_args()
     modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "_v" + str(
