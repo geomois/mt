@@ -5,7 +5,6 @@ import numpy as np
 from models.cnet import ConvNet
 import models.instruments as inst
 from dataUtils.dataHandler import DataHandler
-import dataUtils.data_utils as du
 import pdb
 import datetime as dt
 import re
@@ -24,8 +23,8 @@ TEST_FREQUENCY_DEFAULT = 300
 CHECKPOINT_FREQ_DEFAULT = 500
 DNN_HIDDEN_UNITS_DEFAULT = '100'
 BATCH_WIDTH_DEFAULT = 50
-CONVOLUTION_VOL_DEPTH_DEFAULT = '156'
-CONVOLUTION_IR_DEPTH_DEFAULT = '44'
+CONVOLUTION_VOL_DEPTH_DEFAULT = 156
+CONVOLUTION_IR_DEPTH_DEFAULT = 44
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
@@ -97,24 +96,24 @@ def buildCnn(dataHandler, swaptionGen=None):
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
-    if (FLAGS.use_pipeline):
+    if (FLAGS.pipeline is not ""):
         pipeline = dataHandler.fitPipeline(getPipeLine())
 
     cnn = ConvNet(volChannels=FLAGS.conv_vol_depth, irChannels=FLAGS.conv_ir_depth, poolingLayerFlag=poolingFlag,
                   architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes, pipeline=pipeline,
-                  calibrationFunc=swaptionGen.calibrate)
+                  calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
     pred = cnn.inference(x_pl)
     tf.add_to_collection("predict", pred)
     if (FLAGS.use_calibration_loss):
         y_pl = tf.placeholder(tf.int32, shape=(None, testY.shape[1]), name="y_pl")
-        loss = cnn.calibrationLoss(pred, y_pl)
+        loss = cnn.calibrationLoss(pred)
     else:
         loss = cnn.loss(pred, y_pl)
 
-    return dataHandler, loss, x_pl, y_pl, testX, testY
+    return dataHandler, loss, pred, x_pl, y_pl, testX, testY
 
 
-def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, pipeline=None):
+def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
@@ -125,7 +124,7 @@ def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, pipeline=None):
             timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
-            if (pipeline is None):
+            if (pipeline is None and FLAGS.use_pipeline):
                 pipeline = getPipeLine()
 
             if (FLAGS.decay_rate > 0):
@@ -137,6 +136,10 @@ def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, pipeline=None):
 
             optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=learningRate)
             opt = optimizer.minimize(loss)
+            gradient = None
+            if (FLAGS.with_gradient):
+                # gradient = tf.gradients(loss, x_pl)
+                gradient = tf.gradients(pred, x_pl)
 
             checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
             for epoch in range(FLAGS.max_steps):
@@ -147,20 +150,25 @@ def trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, pipeline=None):
                 if epoch % FLAGS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
+                    lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
                     print("====================================================================================")
-                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (learningRate.eval()), "loss=",
+                    print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
                           "{:.6f}".format(out))
                 if epoch % FLAGS.test_frequency == 0 and epoch > 0:
-                    if (epoch == FLAGS.test_frequency):
+                    if (epoch == FLAGS.test_frequency and pipeline is not None):
                         print("Transforming test")
                         testY = pipeline.transform(testY)
-
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
                 if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
+            if (gradient is not None):
+                pdb.set_trace()
+                derivative = sess.run(gradient, feed_dict={x_pl: testX})
+                np.save(derivative[0], checkpointFolder + "testDerivatives.npy")
+
         tf.reset_default_graph()
     except:
         print("Exception during training")
@@ -191,13 +199,13 @@ def setupDataHandler():
     else:
         predShape = None
         specialFilePrefix = ''
-    dataHandler = DataHandler(dataFileName=FLAGS.volFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
-                              volDepth=int(FLAGS.conv_vol_depth[0]), irDepth=int(FLAGS.conv_ir_depth[0]),
+    dataFileName = FLAGS.volFileName if FLAGS.volFileName is not None else FLAGS.irFileName
+    dataHandler = DataHandler(dataFileName=dataFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
+                              volDepth=int(FLAGS.data_vol_depth), irDepth=int(FLAGS.data_ir_depth),
                               useDataPointers=FLAGS.use_calibration_loss, save=FLAGS.saveProcessedData,
                               specialFilePrefix=specialFilePrefix, predictiveShape=predShape)
-
     if (FLAGS.processedData):
-        fileList = dataHandler.findTwinFiles(FLAGS.volFileName)
+        fileList = dataHandler.findTwinFiles(dataFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
 
     return dataHandler
@@ -253,8 +261,8 @@ def main(_):
     if FLAGS.is_train:
         dh = setupDataHandler()
         if FLAGS.nn_model == 'cnn':
-            dataHandler, loss, x_pl, y_pl, testX, testY, date_pl = buildCnn(dh, swaptionGen=swo)
-            pipeline = trainNN(dataHandler, loss, x_pl, y_pl, testX, testY, date_pl)
+            dataHandler, loss, pred, x_pl, y_pl, testX, testY = buildCnn(dh, swaptionGen=swo)
+            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY)
             if (pipeline is not None):
                 pipelinePath = FLAGS.checkpoint_dir + modelName
                 if (not os.path.exists(pipelinePath)):
@@ -295,10 +303,14 @@ if __name__ == '__main__':
                         help='Comma separated list of number of units in each hidden layer')
     parser.add_argument('-bw', '--batch_width', type=int, default=BATCH_WIDTH_DEFAULT,
                         help='Batch width')
-    parser.add_argument('-cvd', '--conv_vol_depth', type=str, default=CONVOLUTION_VOL_DEPTH_DEFAULT,
+    parser.add_argument('-cvd', '--conv_vol_depth', type=int, default=CONVOLUTION_VOL_DEPTH_DEFAULT,
                         help='Comma separated list of number of convolution depth for volatilities in each layer')
-    parser.add_argument('-cid', '--conv_ir_depth', type=str, default=CONVOLUTION_IR_DEPTH_DEFAULT,
-                        help='Comma separated list of number of convolution depth for interest rate in each layer')
+    parser.add_argument('-cid', '--conv_ir_depth', type=int, default=CONVOLUTION_IR_DEPTH_DEFAULT,
+                        help='Comma separated list of number of data depth for interest rate in each layer')
+    parser.add_argument('-dvd', '--data_vol_depth', type=int, default=CONVOLUTION_VOL_DEPTH_DEFAULT,
+                        help='Comma separated list of number of convolution depth for volatilities in each layer')
+    parser.add_argument('-did', '--data_ir_depth', type=int, default=CONVOLUTION_IR_DEPTH_DEFAULT,
+                        help='Comma separated list of number of data depth for interest rate in each layer')
     parser.add_argument('-fc', '--fullyConnectedNodes', nargs='+', default=FULLY_CONNECTED_NODES_DEFAULT,
                         help='Comma separated list of number of dense layer depth')
     parser.add_argument('-ar', '--architecture', nargs='+', default=DEFAULT_ARCHITECTURE,
@@ -359,8 +371,12 @@ if __name__ == '__main__':
     parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
     parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
                         help='Comma separated list of numbers for the input and output depth of the nn')
+    parser.add_argument('--with_gradient', action='store_true',
+                        help='Computes partial derivative wrt the neural network input')
+    parser.add_argument('-up', '--use_pipeline', action='store_true',
+                        help='Computes partial derivative wrt the neural network input')
 
     FLAGS, unparsed = parser.parse_known_args()
     modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "_v" + str(
-        FLAGS.conv_vol_depth) + "_ir" + (FLAGS.conv_ir_depth)
+        FLAGS.conv_vol_depth) + "_ir" + str(FLAGS.conv_ir_depth)
     tf.app.run()

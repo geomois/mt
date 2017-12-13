@@ -47,17 +47,16 @@ class DataHandler(object):
         self.runId = None
         self.randomSpliting = randomSplit
         self.specialPrefix = specialFilePrefix
-        # predictive tuple (label = "vol" or "ir", [inputDepth, outputDepth])
+        # predictive tuple (label = "vol" or "ir", [inputWidth, outputWidth])
         self.predictive = predictiveShape
         self._getCurrentRunId()
 
     def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         if (len(self.testData["input"]) == 0):
-            # pdb.set_trace()
             batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
-            if (self.predictive is not None):
-                self._feedTransform('test')
+        if (self.predictive is not None):
+            self._feedTransform('test')
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
             suffix = 'test' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
@@ -187,6 +186,11 @@ class DataHandler(object):
                         # pdb.set_trace()
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                     modulo = len(self.inputSegments)
+
+            if (self.predictive is not None and not self.useDataPointers):
+                self._feedTransform('train')
+                modulo = len(self.trainData["input"])
+
             if (randomDraw):
                 indices = np.random.randint(0, high=len(self.trainData["input"]), size=batchSize)
                 trainX = self.trainData["input"][indices]
@@ -194,9 +198,6 @@ class DataHandler(object):
             else:
                 trainX = self.trainData["input"][self.lastBatchPointer:batchSize]
                 trainY = self.trainData["output"][self.lastBatchPointer:batchSize]
-
-            if (self.predictive is not None and not self.useDataPointers):
-                self._feedTransform('train')
         else:
             if (self.useDataPointers):
                 modulo = len(self.trainIndices)
@@ -235,10 +236,12 @@ class DataHandler(object):
             targetDict = self.trainData
         else:
             targetDict = self.testData
-
         mode = self.predictive[0]
-        inDepth = int(self.predictive[1][0])  # should always be
-        outDepth = int(self.predictive[1][1])
+        inWidth = int(self.predictive[1][0])  # should always be
+        outWidth = int(self.predictive[1][1])
+        depth = 1
+        if (len(self.predictive[1]) > 2):
+            depth = int(self.predictive[1][2])
         targetShape = np.asarray(targetDict['input']).shape
         if (mode.lower() is self.modes[0]):
             start = 0
@@ -246,11 +249,22 @@ class DataHandler(object):
         else:
             start = self.volDepth
             end = targetShape[3]
-        if (outDepth > targetShape[2]):
-            outDepth = targetShape[2]
+        if (outWidth > targetShape[2]):
+            outWidth = targetShape[2]
+        if (inWidth > targetShape[2]):
+            inWidth = targetShape[2]
 
-        targetDict['output'] = targetDict['input'][1:, :, :outDepth, start:end]  # skip first
-        targetDict['input'] = targetDict['input'][:targetShape - 1, :, :, start:end]  # skip last
+        targetDict['output'] = self._reshapeToPredict(
+            np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1,1))  # skip first
+        targetDict['input'] = self._reshapeToPredict(
+            np.asarray(targetDict['input'][:targetShape[0] - 1, :, :inWidth, start:end]))  # skip last
+
+    def _reshapeToPredict(self, array):
+        o = np.empty((0, 1, array.shape[2], 1))
+        for i in range(array.shape[0]):
+            temp = array[i, :].T.reshape(array.shape[3], 1, array.shape[2], 1)
+            o = np.vstack((temp, o))
+        return o
 
     def fitPipeline(self, pipeline):
         if (self.useDataPointers and len(self.trainData['output']) == 0):

@@ -162,7 +162,7 @@ class ConvNet(object):
 
         return loss
 
-    def calibrationLoss(self, ):
+    def calibrationLoss(self, date):
         pass
 
     def predict(self, vol, ir, sess, x_pl):
