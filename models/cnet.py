@@ -170,7 +170,7 @@ class ConvNet(object):
         if (self.volChannels > 0):
             x = np.float32(vol[:, :self.volChannels])
         if (self.irChannels > 0):
-            x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
+            x = np.hstack((x, np.float32(ir[:, :self.irChannels])))
 
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         out = sess.run([self.predictOp], feed_dict={x_pl: x})

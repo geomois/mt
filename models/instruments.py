@@ -13,6 +13,7 @@ from scipy.linalg import sqrtm
 import matplotlib.pyplot as plt
 import dataUtils.dbDataPreprocess as dbc
 from collections import deque
+from dataUtils.curveUtils import *
 import pdb
 
 # import variational_autoencoder as vae
@@ -201,6 +202,7 @@ class SwaptionGen(du.TimeSeriesData):
         # Yield Curve and dates
         self._ircurve = IRCurve(self.ccy, to_tenor(index, irType), parentNode=parentNode, data=irData)
         self._dates = self.intersection(self._ircurve)
+        pdb.set_trace()
         self.refdate = ql.Date(self._dates[0].day, self._dates[0].month, self._dates[0].year)
         ql.Settings.instance().evaluationDate = self.refdate
         self._term_structure = ql.RelinkableYieldTermStructureHandle()
@@ -249,7 +251,7 @@ class SwaptionGen(du.TimeSeriesData):
         self.values = None
 
     def set_date(self, date):
-        pdb.set_trace()
+        # pdb.set_trace()
         # Set Reference Date
         ts = pd.Timestamp(date)
         dt = ql.Date(ts.day, ts.month, ts.year)
@@ -980,6 +982,14 @@ class SwaptionGen(du.TimeSeriesData):
             f2.plot(r, vals[:, 1])
             plt.savefig(modelName + '.png')
         return (dates, values, vals, params)
+
+    def calcForward(self, export, path):
+        for date in self._dates:
+            ts = pd.Timestamp(date)
+            dt = ql.Date(ts.day, ts.month, ts.year)
+            fDate = dt + ql.Period(1, ql.Years)
+            getImpliedForwardCurve()
+
 
 
 class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):

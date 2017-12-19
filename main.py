@@ -31,6 +31,7 @@ ACTIVATION_DEFAULT = 'relu'
 OPTIMIZER_DEFAULT = 'sgd'
 FULLY_CONNECTED_NODES_DEFAULT = ['2']
 DEFAULT_ARCHITECTURE = ['c', 'f', 'd']
+GPU_MEMORY_FRACTION = 0.3
 # endregion NNDefaultConstants
 
 # region QLDefaultConstants
@@ -136,10 +137,12 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
 
             optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=learningRate)
             opt = optimizer.minimize(loss)
+
             gradient = None
             if (FLAGS.with_gradient):
                 # gradient = tf.gradients(loss, x_pl)
                 gradient = tf.gradients(pred, x_pl)
+                # optimizer.compute_gradients()
 
             checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
             for epoch in range(FLAGS.max_steps):
@@ -252,11 +255,17 @@ def main(_):
     if (FLAGS.weight_reg_strength is None):
         FLAGS.weight_reg_strength = 0.0
     inst.setDataFileName(FLAGS.data_dir)
-    if (FLAGS.calibrate or FLAGS.use_calibration_loss):
-        swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType, volFileName=FLAGS.volFileName,
-                                   irFileName=FLAGS.irFileName)
+    if (FLAGS.calibrate or FLAGS.use_calibration_loss or FLAGS.exportForwardRates):
+        swo = inst.get_swaptiongen(getIrModel(), currency=FLAGS.currency, irType=FLAGS.irType,
+                                   volFileName=FLAGS.volFileName, irFileName=FLAGS.irFileName)
         if FLAGS.calibrate:
             swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
+
+        if FLAGS.exportForwardRates:
+            exportPath = './exports/' + modelName
+            if (not os.path.exists(exportPath)):
+                os.makedirs(exportPath)
+            swo.calcForward(export=True, path=exportPath)
 
     if FLAGS.is_train:
         dh = setupDataHandler()
@@ -276,20 +285,25 @@ def main(_):
     if FLAGS.compare:
         # if (FLAGS.nn.lower() == 'cnn'):
         # loadCnn(FLAGS.conv_vol_depth, FLAGS.conv_ir_depth)
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
             directory = FLAGS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
             if (FLAGS.nn_model.lower() == 'cnn'):
-                pipelinePath = FLAGS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
-                model = ConvNet(predictOp=predictOp, pipeline=getPipeLine(pipelinePath))
+                if (FLAGS.pipeline is not ""):
+                    pipelinePath = FLAGS.pipeline
+                else:
+                    pipelinePath = FLAGS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
+                model = ConvNet(volChannels=FLAGS.conv_vol_depth, irChannels=FLAGS.conv_ir_depth, predictOp=predictOp,
+                                pipeline=getPipeLine(pipelinePath))
             elif (FLAGS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
             swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
             _, values, vals, params = swo.compare_history(model, modelName, dataLength=FLAGS.batch_width, session=sess,
-                                                          x_pl=x_pl, skip=FLAGS.skip, plot_results=False)
+                                                          x_pl=x_pl, skip=FLAGS.skip, plot_results=False,
+                                                          fullTest=FLAGS.full_test)
 
             np.save(FLAGS.checkpoint_dir + modelName + "Values.npy", values)
             np.save(FLAGS.checkpoint_dir + modelName + "Vals.npy", vals)
@@ -367,7 +381,8 @@ if __name__ == '__main__':
     parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
-    parser.add_argument('--gpu_memory_fraction', type=float, default=0.3, help='Percentage of gpu memory to use')
+    parser.add_argument('--gpu_memory_fraction', type=float, default=GPU_MEMORY_FRACTION,
+                        help='Percentage of gpu memory to use')
     parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
     parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
                         help='Comma separated list of numbers for the input and output depth of the nn')
@@ -375,8 +390,12 @@ if __name__ == '__main__':
                         help='Computes partial derivative wrt the neural network input')
     parser.add_argument('-up', '--use_pipeline', action='store_true',
                         help='Computes partial derivative wrt the neural network input')
+    parser.add_argument('--full_test', action='store_true', help='Calibrate history with new starting points++')
+    parser.add_argument('--suffix', type=str, default="", help='Custom string identifier for modelName')
+    parser.add_argument('--exportForwardRates', action='store_true',
+                        help='Calculate and save spot rates to forward rates')
 
     FLAGS, unparsed = parser.parse_known_args()
-    modelName = FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(FLAGS.batch_width) + "_v" + str(
-        FLAGS.conv_vol_depth) + "_ir" + str(FLAGS.conv_ir_depth)
+    modelName = FLAGS.suffix + FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(
+        FLAGS.batch_width) + "_v" + str(FLAGS.conv_vol_depth) + "_ir" + str(FLAGS.conv_ir_depth)
     tf.app.run()
