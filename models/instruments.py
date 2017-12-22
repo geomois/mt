@@ -983,7 +983,7 @@ class SwaptionGen(du.TimeSeriesData):
         return (dates, values, vals, params)
 
     def calcForward(self, path=None, futureIncrementInDays=180):
-        fwCurves = pd.DataFrame(columns=["ReferenceDate", "FutureDate", "Tenor", "Rate"])
+        fwCurves = pd.DataFrame(columns=["Date", "FutureDate", "Tenor", "Rate"])
         for date in self._dates:
             ts = pd.Timestamp(date)
             refDate = ql.Date(ts.day, ts.month, ts.year)

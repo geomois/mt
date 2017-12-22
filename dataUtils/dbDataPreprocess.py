@@ -140,19 +140,19 @@ def cleanCsv(path, mode='vol', toNNData=False, exportPath=None, dbFormat=False):
         return
     # pdb.set_trace()
     df = shortClean(df, hasDuplicates=True)
-    paramFlag = False
-    if (mode != 'params'):
+    targetFlag = False
+    if (mode != 'target'):
         df, terms = fixColumnNamesAndFieldFormats(df, dbFormat=dbFormat)
     else:
         terms = [i for i in df.columns if (i.lower() != 'date')]
-        paramFlag = True
+        targetFlag = True
 
     nnData = None
     if (toNNData):
         if (exportPath is True):
             name, prefix, fileType, mode, rest = breakPath(path)
             exportPath = prefix + ''.join(rest) + mode + '.npy'
-        nnData = dfToNNData(df, terms, targetDirectory=exportPath, params=paramFlag)
+        nnData = dfToNNData(df, terms, targetDirectory=exportPath, target=targetFlag)
 
     return df, nnData
 
@@ -191,18 +191,20 @@ def fixColumnNamesAndFieldFormats(df, dbFormat=False):
     return df, terms
 
 
-def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params=False):
-    '''
+def dfToNNData(dFrame, groupingColumns, targetDirectory=None, target=False):
+    """
     :param dFrame: pandas dataframe with columns [Date, Term, Value] or [Date, Term1, Term2, Value]
                     or [Date, Alpha, Sigma]
     :param targetDirectory: directory to save numpy array
-    :return: numpy array
-    '''
+    :param groupingColumns:
+    :param target:
+    :return:
+    """
     assert ('Date' in dFrame.columns), "No date in dataframe"
     dat = None
     low = [i.lower() for i in groupingColumns]
     # if ('alpha' in low or 'sigma' in low):
-    if (params):
+    if (target):
         dat = np.zeros((dFrame.shape[0]))
         for c in groupingColumns:
             dat = np.vstack((dat, dFrame[c].copy().as_matrix()))
@@ -226,7 +228,7 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, params=False):
 
 
 def shortClean(dFrame, columns=['MDT_ID', 'MDE_ID', 'CURVE_ID_1', 'CURVE_ID_2', 'CURVE_ID_3', 'GMDB_SYMBOL', 'PNT_ID',
-                                'CURVE_UNIFIED', 'Z1', 'MONEYNESS'], hasDuplicates=False):
+                                'CURVE_UNIFIED', 'Z1', 'MONEYNESS', "FutureDate", "Tenor"], hasDuplicates=False):
     dat = dFrame.copy()
     if (hasDuplicates):
         dat = dropDuplicates(dat)

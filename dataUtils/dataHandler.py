@@ -11,8 +11,11 @@ class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
                  , testDataPercentage=0.2, batchSize=50, width=50, volDepth=156,
                  irDepth=44, sliding=True, useDataPointers=True, randomSplit=False, datePointer=False, save=False,
-                 specialFilePrefix="", predictiveShape=None):
-        self.modes = ['vol', 'ir', 'params']
+                 specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None):
+        target = 'params' if targetDataMode is None else targetDataMode
+        if (targetDataPath is not None and targetDataMode is None):
+            target = 'target'
+        self.modes, self.targetName = self.setupModes(volDepth, irDepth, target)
         self.dataFileName = dataFileName
         self.batchSize = batchSize
         self.segmentWidth = width
@@ -36,11 +39,11 @@ class DataHandler(object):
         self.prevWidthStartPosition = -1
         self.volatilities = None
         self.ir = None
-        self.params = None
+        self.target = None
         self.filePrefix = None
         self.inputSegments = []
         self.outputSegments = []
-        self.dataPointers = {"vol": [], "ir": [], "params": []}
+        self.dataPointers = {"vol": [], "ir": [], self.targetName: []}
         self.lastBatchPointer = -1
         self.saveProcessedData = save
         self.delegatedFromFile = False
@@ -49,7 +52,20 @@ class DataHandler(object):
         self.specialPrefix = specialFilePrefix
         # predictive tuple (label = "vol" or "ir", [inputWidth, outputWidth])
         self.predictive = predictiveShape
+        self.targetDataPath = targetDataPath
         self._getCurrentRunId()
+
+    def setupModes(self, volDepth, irDepth, targetName):
+        modes = []
+        target = []
+        if (volDepth > 0):
+            modes.append('vol')
+        if (irDepth > 0):
+            modes.append('ir')
+        if (targetName is not None):
+            modes.append(targetName)
+            target = targetName
+        return modes, target
 
     def getTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         if (len(self.testData["input"]) == 0):
@@ -59,7 +75,7 @@ class DataHandler(object):
             self._feedTransform('test')
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
-            suffix = 'test' + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
+            suffix = 'test' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(self.segmentWidth) + '_' + str(
                 self.volDepth) + '_' + str(self.irDepth)
             self._saveProcessedData(suffix, 'test')
 
@@ -77,21 +93,24 @@ class DataHandler(object):
                     path = str(self.filePrefix + mode + '.' + fileType)
                     if (os.path.isfile(path=path)):
                         fileList.append((path, mode))
+                    elif (mode == self.targetName and self.targetDataPath is not None):
+                        if (os.path.isfile(path=self.targetDataPath)):
+                            fileList.append((self.targetDataPath, mode))
 
         if fileType.lower() == 'csv':
             for path, mode in fileList:
+                cleanMode = mode if mode not in self.targetName else 'target'
                 if (clean):
-                    # pdb.set_trace()
-                    df, npy = dbc.cleanCsv(path, mode=mode, toNNData=True, exportPath=True, dbFormat=True)
+                    df, npy = dbc.cleanCsv(path, mode=cleanMode, toNNData=True, exportPath=True, dbFormat=True)
                 else:
-                    df, npy = dbc.cleanCsv(path, mode=mode, toNNData=True, exportPath=True, dbFormat=False)
+                    df, npy = dbc.cleanCsv(path, mode=cleanMode, toNNData=True, exportPath=True, dbFormat=False)
                 self._setDataFiles(npy, mode)
         elif fileType.lower() == 'npy':
             for path, mode in fileList:
                 # pdb.set_trace()
                 self._setDataFiles(np.load(path), mode)
 
-        if (self.params is None):
+        if (self.target is None):
             return 1
         # self._setChunkedProps(batchSize, volDepth, irDepth, sliding)
 
@@ -123,7 +142,7 @@ class DataHandler(object):
 
     def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-        if (self.volatilities is None):
+        if (self.volatilities is None):  # generalize
             self.readData(self.dataFileName)
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth, self.useDataPointers)
@@ -229,7 +248,7 @@ class DataHandler(object):
 
     def _feedTransform(self, data):
         """
-        :param x: nn sliding input
+        :param data: data pointer
         :return: reshaped  x, y
         """
         if (data.lower() == "train"):
@@ -237,7 +256,7 @@ class DataHandler(object):
         else:
             targetDict = self.testData
         mode = self.predictive[0]
-        inWidth = int(self.predictive[1][0])  # should always be
+        inWidth = int(self.predictive[1][0])
         outWidth = int(self.predictive[1][1])
         depth = 1
         if (len(self.predictive[1]) > 2):
@@ -255,7 +274,7 @@ class DataHandler(object):
             inWidth = targetShape[2]
 
         targetDict['output'] = self._reshapeToPredict(
-            np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1,1))  # skip first
+            np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1, 1))  # skip first
         targetDict['input'] = self._reshapeToPredict(
             np.asarray(targetDict['input'][:targetShape[0] - 1, :, :inWidth, start:end]))  # skip last
 
@@ -291,28 +310,29 @@ class DataHandler(object):
             self.volatilities = data
         elif (mode.lower() == 'ir'):
             self.ir = data
-        elif (mode.lower() == 'params'):
-            self.params = data
+        elif (mode.lower() == self.targetName):
+            self.target = data
 
     def reshapeFromPointers(self, width, volDepth, irDepth, indices, startPointer=0, nbBatches=10, train=False,
                             fromPointers=True):
         # pdb.set_trace()
         inSegments = np.empty((0, width, volDepth + irDepth))
-        targetSegments = np.empty((0, self.params.shape[0]))
+        targetSegments = np.empty((0, self.target.shape[0]))
         if (len(self.dataPointers['vol']) > 0):
             # if(len(self.trainIndices)):
             #     self.trainIndices = np.where(self.splitBooleanIndex == True)[0]
             volPointers = np.array(self.dataPointers['vol'])[indices[startPointer:startPointer + nbBatches]]
             irPointers = np.array(self.dataPointers['ir'])[indices[startPointer:startPointer + nbBatches]]
-            paramPointers = np.array(self.dataPointers['params'])[indices[startPointer:startPointer + nbBatches]]
+            targetPointers = np.array(self.dataPointers[self.targetName])[
+                indices[startPointer:startPointer + nbBatches]]
 
             for i in range(len(volPointers)):
                 vol = self.volatilities[volPointers[i][0]:volPointers[i][1], volPointers[i][2]:volPointers[i][3]]
                 ir = self.ir[irPointers[i][0]:irPointers[i][1], irPointers[i][2]:irPointers[i][3]]
-                params = self.params[:, paramPointers[i]]
+                target = self.target[:, targetPointers[i]]
                 inPut = self._mergeReashapeInput(vol=vol, ir=ir)
                 inSegments = np.vstack((inSegments, inPut))
-                targetSegments = np.vstack((targetSegments, params))
+                targetSegments = np.vstack((targetSegments, target))
         else:
             raise IndexError()
         # pdb.set_trace()
@@ -321,19 +341,19 @@ class DataHandler(object):
 
     def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
-        targetSegments = np.empty((0, self.params.shape[0]))
+        targetSegments = np.empty((0, self.target.shape[0]))
         # bad memory handling, we could only keep coordinates of each chunk
         while (True):
-            vol, ir, params, traversedDataset = self._buildBatch(width, volDepth, irDepth, pointers=pointers)
+            vol, ir, target, traversedDataset = self._buildBatch(width, volDepth, irDepth, pointers=pointers)
             if (pointers):
                 self.dataPointers['vol'].append(vol)
                 self.dataPointers['ir'].append(ir)
-                self.dataPointers['params'].append(params)
+                self.dataPointers[self.targetName].append(target)
             else:
                 inPut = self._mergeReashapeInput(vol, ir)
                 # pdb.set_trace()
                 inSegments = np.vstack((inSegments, inPut))
-                targetSegments = np.vstack((targetSegments, params))
+                targetSegments = np.vstack((targetSegments, target))
             if (traversedDataset):
                 break
         if (not pointers):
@@ -347,8 +367,17 @@ class DataHandler(object):
         return inPut
 
     def _buildBatch(self, width, volDepth, irDepth, pointers=True):
-        irDepthEnd = False
-        volDepthEnd = False
+        if (irDepth == 0):
+            irDepthEnd = True
+        else:
+            irDepthEnd = False
+
+        if (volDepth == 0):
+            volDepthEnd = True
+        else:
+            volDepthEnd = False
+        if (volDepthEnd and irDepthEnd):
+            raise ValueError('Zero depths')
         seriesEnd = False
         traversedFullDataset = False
         # pdb.set_trace()
@@ -367,20 +396,14 @@ class DataHandler(object):
 
         if (widthEndFlag):
             self.endOfSeriesCount += 1
-        if (not seriesEnd and self.prevVolDepthPosition != -1):
-            volStartPosition = self.prevVolStartPosition
-            volStopPosition = self.prevVolDepthPosition
-        else:
-            volStartPosition, volStopPosition, volDepthEnd = \
-                self._checkLimits(self.prevVolStartPosition, self.prevVolDepthPosition, volDepth,
-                                  self.volatilities.shape[0])
 
-        if (not seriesEnd and self.prevIrDepthPosition != -1):
-            irStartPosition = self.prevIrStartPosition
-            irStopPosition = self.prevIrDepthPosition
-        else:
-            irStartPosition, irStopPosition, irDepthEnd = \
-                self._checkLimits(self.prevIrStartPosition, self.prevIrDepthPosition, irDepth, self.ir.shape[0])
+        volStartPosition, volStopPosition, volDepthEnd = self._getLimits(seriesEnd, self.prevVolStartPosition,
+                                                                         self.prevVolDepthPosition, volDepth,
+                                                                         self.volatilities.shape[0], volDepthEnd)
+
+        irStartPosition, irStopPosition, irDepthEnd = self._getLimits(seriesEnd, self.prevIrStartPosition,
+                                                                      self.prevIrDepthPosition, irDepth,
+                                                                      self.ir.shape[0], irDepthEnd)
 
         self.prevIrDepthPosition = irStopPosition
         self.prevVolDepthPosition = volStopPosition
@@ -405,20 +428,34 @@ class DataHandler(object):
         if (pointers):
             volData = (volStartPosition, volStopPosition, startWidthPosition, endWidthPosition)
             irData = (irStartPosition, irStopPosition, startWidthPosition, endWidthPosition)
-            params = endWidthPosition - 1
+            target = endWidthPosition - 1
         else:
-            volData, irData, params = self._getActualData(volStartPosition, volStopPosition, irStartPosition,
+            volData, irData, target = self._getActualData(volStartPosition, volStopPosition, irStartPosition,
                                                           irStopPosition,
                                                           startWidthPosition, endWidthPosition)
 
-        return volData, irData, params, traversedFullDataset
+        return volData, irData, target, traversedFullDataset
+
+    def _getLimits(self, seriesEnd, prevStartPosition, prevDepthPosition, seriesDepth, limit, endFlag):
+        if (seriesDepth <= 0):
+            return 0, 0, True
+        else:
+            if (not seriesEnd and prevDepthPosition != -1):
+                startPosition = prevStartPosition
+                stopPosition = prevDepthPosition
+            else:
+                startPosition, stopPosition, endFlag = \
+                    self._checkLimits(prevStartPosition, prevDepthPosition, seriesDepth,
+                                      limit)
+
+            return startPosition, stopPosition, endFlag
 
     def _getActualData(self, volStart, volStop, irStart, irStop, widthStart, widthStop):
         volData = self.volatilities[volStart:volStop, widthStart:widthStop]
         irData = self.ir[irStart:irStop, widthStart:widthStop]
-        params = self.params[:, widthStop - 1]
+        target = self.target[:, widthStop - 1]
 
-        return volData, irData, params
+        return volData, irData, target
 
     def _checkLimits(self, prevStartPosition, prevStopPosition, step, limit):
         endFlag = False

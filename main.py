@@ -96,6 +96,10 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None):
     testX, testY = dataHandler.getTestData()
+    if (int(OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1]) != testY.shape[1]):
+        print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
+        print("Aligning...")
+        OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1] = testY.shape[1]
     x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
@@ -134,7 +138,8 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             if (OPTIONS.decay_rate > 0):
                 learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate, global_step=global_step,
                                                           decay_steps=OPTIONS.decay_steps,
-                                                          decay_rate=OPTIONS.decay_rate, staircase=OPTIONS.decay_staircase)
+                                                          decay_rate=OPTIONS.decay_rate,
+                                                          staircase=OPTIONS.decay_staircase)
             else:
                 learningRate = OPTIONS.learning_rate
 
@@ -200,6 +205,8 @@ def setupDataHandler():
             mode = 'vol'
         elif (OPTIONS.irFileName is not None):
             mode = 'ir'
+        else:
+            raise ValueError('File name is not correct')
         predShape = (mode, OPTIONS.predictiveShape)
         specialFilePrefix = "_M" + mode + ''.join(OPTIONS.predictiveShape)
     else:
@@ -305,13 +312,15 @@ def main(_):
                     pipelinePath = OPTIONS.pipeline
                 else:
                     pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
-                model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, predictOp=predictOp,
+                model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
+                                predictOp=predictOp,
                                 pipeline=getPipeLine(pipelinePath))
             elif (OPTIONS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
             swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
-            _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width, session=sess,
+            _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
+                                                          session=sess,
                                                           x_pl=x_pl, skip=OPTIONS.skip, plot_results=False,
                                                           fullTest=OPTIONS.full_test)
 
