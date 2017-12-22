@@ -22,7 +22,7 @@ DROPOUT_RATE_DEFAULT = 0.2
 TEST_FREQUENCY_DEFAULT = 300
 CHECKPOINT_FREQ_DEFAULT = 500
 DNN_HIDDEN_UNITS_DEFAULT = '100'
-BATCH_WIDTH_DEFAULT = 50
+BATCH_WIDTH_DEFAULT = 30
 CONVOLUTION_VOL_DEPTH_DEFAULT = 156
 CONVOLUTION_IR_DEPTH_DEFAULT = 44
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
@@ -50,6 +50,9 @@ CHECKPOINT_DIR_DEFAULT = 'tf/checkpoints/'
 # endregion defaultDirectories
 
 # region optionDictionaries
+SCALER_DICT = {'standard': StandardScaler,
+               'minmax': MinMaxScaler}
+
 WEIGHT_INITIALIZATION_DICT = {'xavier': tf.contrib.layers.xavier_initializer,  # Xavier initialisation
                               'normal': tf.random_normal_initializer,  # Initialization from a standard normal
                               'uniform': tf.random_normal_initializer}  # Initialization from a uniform distribution
@@ -75,7 +78,7 @@ IR_MODEL = {'hullwhite': inst.hullwhite_analytic,
             }
 # endregion optionDictionaries
 
-FLAGS = None
+OPTIONS = None
 modelName = None
 tf.set_random_seed(42)
 np.random.seed(42)
@@ -84,8 +87,8 @@ np.random.seed(42)
 def trainLSTM(dataHandler):
     tf.set_random_seed(42)
     np.random.seed(42)
-    if FLAGS.dnn_hidden_units:
-        dnn_hidden_units = FLAGS.dnn_hidden_units.split(",")
+    if OPTIONS.dnn_hidden_units:
+        dnn_hidden_units = OPTIONS.dnn_hidden_units.split(",")
         dnn_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in dnn_hidden_units]
     else:
         dnn_hidden_units = []
@@ -97,15 +100,15 @@ def buildCnn(dataHandler, swaptionGen=None):
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
-    if (FLAGS.pipeline is not ""):
+    if (OPTIONS.pipeline is not ""):
         pipeline = dataHandler.fitPipeline(getPipeLine())
 
-    cnn = ConvNet(volChannels=FLAGS.conv_vol_depth, irChannels=FLAGS.conv_ir_depth, poolingLayerFlag=poolingFlag,
-                  architecture=FLAGS.architecture, fcUnits=FLAGS.fullyConnectedNodes, pipeline=pipeline,
+    cnn = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, poolingLayerFlag=poolingFlag,
+                  architecture=OPTIONS.architecture, fcUnits=OPTIONS.fullyConnectedNodes, pipeline=pipeline,
                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
     pred = cnn.inference(x_pl)
     tf.add_to_collection("predict", pred)
-    if (FLAGS.use_calibration_loss):
+    if (OPTIONS.use_calibration_loss):
         y_pl = tf.placeholder(tf.int32, shape=(None, testY.shape[1]), name="y_pl")
         loss = cnn.calibrationLoss(pred)
     else:
@@ -118,54 +121,54 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
         global_step = tf.Variable(0, trainable=False)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
             sess.run(tf.global_variables_initializer())
             timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
-            train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train' + timestamp, sess.graph)
-            test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test' + timestamp, sess.graph)
-            if (pipeline is None and FLAGS.use_pipeline):
+            train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
+            test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
+            if (pipeline is None and OPTIONS.use_pipeline):
                 pipeline = getPipeLine()
 
-            if (FLAGS.decay_rate > 0):
-                learningRate = tf.train.exponential_decay(learning_rate=FLAGS.learning_rate, global_step=global_step,
-                                                          decay_steps=FLAGS.decay_steps,
-                                                          decay_rate=FLAGS.decay_rate, staircase=FLAGS.decay_staircase)
+            if (OPTIONS.decay_rate > 0):
+                learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate, global_step=global_step,
+                                                          decay_steps=OPTIONS.decay_steps,
+                                                          decay_rate=OPTIONS.decay_rate, staircase=OPTIONS.decay_staircase)
             else:
-                learningRate = FLAGS.learning_rate
+                learningRate = OPTIONS.learning_rate
 
-            optimizer = OPTIMIZER_DICT[FLAGS.optimizer](learning_rate=learningRate)
+            optimizer = OPTIMIZER_DICT[OPTIONS.optimizer](learning_rate=learningRate)
             opt = optimizer.minimize(loss)
 
             gradient = None
-            if (FLAGS.with_gradient):
+            if (OPTIONS.with_gradient):
                 # gradient = tf.gradients(loss, x_pl)
                 gradient = tf.gradients(pred, x_pl)
                 # optimizer.compute_gradients()
 
-            checkpointFolder = FLAGS.checkpoint_dir + modelName + "/"
-            for epoch in range(FLAGS.max_steps):
+            checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
+            for epoch in range(OPTIONS.max_steps):
                 sess.run(global_step.assign(epoch))
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y})
-                if epoch % FLAGS.print_frequency == 0:
+                if epoch % OPTIONS.print_frequency == 0:
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
                     print("====================================================================================")
                     print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
                           "{:.6f}".format(out))
-                if epoch % FLAGS.test_frequency == 0 and epoch > 0:
-                    if (epoch == FLAGS.test_frequency and pipeline is not None):
+                if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
+                    if (epoch == OPTIONS.test_frequency and pipeline is not None):
                         print("Transforming test")
                         testY = pipeline.transform(testY)
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
-                if epoch % FLAGS.checkpoint_freq == 0 and epoch > 0:
+                if epoch % OPTIONS.checkpoint_freq == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
             if (gradient is not None):
                 pdb.set_trace()
@@ -192,22 +195,22 @@ def importSavedNN(session, modelPath, fileName):
 
 
 def setupDataHandler():
-    if (FLAGS.predictiveShape is not None):
-        if (FLAGS.volFileName is not None):
+    if (OPTIONS.predictiveShape is not None):
+        if (OPTIONS.volFileName is not None):
             mode = 'vol'
-        elif (FLAGS.irFileName is not None):
+        elif (OPTIONS.irFileName is not None):
             mode = 'ir'
-        predShape = (mode, FLAGS.predictiveShape)
-        specialFilePrefix = "_M" + mode + ''.join(FLAGS.predictiveShape)
+        predShape = (mode, OPTIONS.predictiveShape)
+        specialFilePrefix = "_M" + mode + ''.join(OPTIONS.predictiveShape)
     else:
         predShape = None
         specialFilePrefix = ''
-    dataFileName = FLAGS.volFileName if FLAGS.volFileName is not None else FLAGS.irFileName
-    dataHandler = DataHandler(dataFileName=dataFileName, batchSize=FLAGS.batch_size, width=FLAGS.batch_width,
-                              volDepth=int(FLAGS.data_vol_depth), irDepth=int(FLAGS.data_ir_depth),
-                              useDataPointers=FLAGS.use_calibration_loss, save=FLAGS.saveProcessedData,
+    dataFileName = OPTIONS.volFileName if OPTIONS.volFileName is not None else OPTIONS.irFileName
+    dataHandler = DataHandler(dataFileName=dataFileName, batchSize=OPTIONS.batch_size, width=OPTIONS.batch_width,
+                              volDepth=int(OPTIONS.data_vol_depth), irDepth=int(OPTIONS.data_ir_depth),
+                              useDataPointers=OPTIONS.use_calibration_loss, save=OPTIONS.saveProcessedData,
                               specialFilePrefix=specialFilePrefix, predictiveShape=predShape)
-    if (FLAGS.processedData):
+    if (OPTIONS.processedData):
         fileList = dataHandler.findTwinFiles(dataFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
 
@@ -215,23 +218,23 @@ def setupDataHandler():
 
 
 def print_flags():
-    for key, value in vars(FLAGS).items():
+    for key, value in vars(OPTIONS).items():
         print(key + ' : ' + str(value))
 
 
 def initDirectories():
     # Make directories if they do not exists yet
-    if not tf.gfile.Exists(FLAGS.log_dir):
-        tf.gfile.MakeDirs(FLAGS.log_dir)
-    if not tf.gfile.Exists(FLAGS.data_dir):
-        tf.gfile.MakeDirs(FLAGS.data_dir)
-    if not tf.gfile.Exists(FLAGS.checkpoint_dir):
-        tf.gfile.MakeDirs(FLAGS.checkpoint_dir)
+    if not tf.gfile.Exists(OPTIONS.log_dir):
+        tf.gfile.MakeDirs(OPTIONS.log_dir)
+    if not tf.gfile.Exists(OPTIONS.data_dir):
+        tf.gfile.MakeDirs(OPTIONS.data_dir)
+    if not tf.gfile.Exists(OPTIONS.checkpoint_dir):
+        tf.gfile.MakeDirs(OPTIONS.checkpoint_dir)
 
 
 def getIrModel():
-    if (str(FLAGS.model) in IR_MODEL):
-        return IR_MODEL[FLAGS.model]
+    if (str(OPTIONS.model) in IR_MODEL):
+        return IR_MODEL[OPTIONS.model]
     else:
         raise RuntimeError("Unknown IR model")
 
@@ -239,9 +242,17 @@ def getIrModel():
 def getPipeLine(fileName=None):
     if (fileName is None):
         irModel = getIrModel()
-        transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
-                                                            inv_func=irModel["inverse_transformation"])
-        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', MinMaxScaler())])
+        if (OPTIONS.predictiveShape is not None):
+            transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
+        else:
+            transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
+                                                                inv_func=irModel["inverse_transformation"])
+        if (OPTIONS.scaler.lower() in SCALER_DICT):
+            scaler = SCALER_DICT[OPTIONS.scaler]
+        else:
+            scaler = SCALER_DICT['minmax']
+
+        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', scaler())])
     else:
         pipeline = joblib.load(fileName)
 
@@ -252,62 +263,61 @@ def main(_):
     print_flags()
     initDirectories()
     swo = None
-    if (FLAGS.weight_reg_strength is None):
-        FLAGS.weight_reg_strength = 0.0
-    inst.setDataFileName(FLAGS.data_dir)
-    if (FLAGS.calibrate or FLAGS.use_calibration_loss or FLAGS.exportForwardRates):
-        swo = inst.get_swaptiongen(getIrModel(), currency=FLAGS.currency, irType=FLAGS.irType,
-                                   volFileName=FLAGS.volFileName, irFileName=FLAGS.irFileName)
-        if FLAGS.calibrate:
-            swo.calibrate_history(start=int(FLAGS.historyStart), end=int(FLAGS.historyEnd))
+    if (OPTIONS.weight_reg_strength is None):
+        OPTIONS.weight_reg_strength = 0.0
+    inst.setDataFileName(OPTIONS.data_dir)
+    if (OPTIONS.calibrate or OPTIONS.use_calibration_loss or OPTIONS.exportForwardRates):
+        swo = inst.get_swaptiongen(getIrModel(), currency=OPTIONS.currency, irType=OPTIONS.irType,
+                                   volFileName=OPTIONS.volFileName, irFileName=OPTIONS.irFileName)
+        if OPTIONS.calibrate:
+            swo.calibrate_history(start=int(OPTIONS.historyStart), end=int(OPTIONS.historyEnd))
 
-        if FLAGS.exportForwardRates:
-            exportPath = './exports/' + modelName
-            if (not os.path.exists(exportPath)):
-                os.makedirs(exportPath)
-            swo.calcForward(export=True, path=exportPath)
+        if OPTIONS.exportForwardRates:
+            exportPath = './exports/' + OPTIONS.suffix + 'fwCurves' + "_fDays" + str(OPTIONS.futureIncrement) + ".csv"
+            if (not os.path.isfile(exportPath)):
+                swo.calcForward(path=exportPath, futureIncrementInDays=OPTIONS.futureIncrement)
+            else:
+                print("File already exists")
 
-    if FLAGS.is_train:
+    if OPTIONS.is_train:
         dh = setupDataHandler()
-        if FLAGS.nn_model == 'cnn':
+        if OPTIONS.nn_model == 'cnn':
             dataHandler, loss, pred, x_pl, y_pl, testX, testY = buildCnn(dh, swaptionGen=swo)
             pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY)
             if (pipeline is not None):
-                pipelinePath = FLAGS.checkpoint_dir + modelName
+                pipelinePath = OPTIONS.checkpoint_dir + modelName
                 if (not os.path.exists(pipelinePath)):
                     os.makedirs(pipelinePath)
                 joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
-        elif FLAGS.nn_model == 'lstm':
+        elif OPTIONS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
 
-    if FLAGS.compare:
-        # if (FLAGS.nn.lower() == 'cnn'):
-        # loadCnn(FLAGS.conv_vol_depth, FLAGS.conv_ir_depth)
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+    if OPTIONS.compare:
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
         with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
-            fileName = ''.join(re.findall(r'(/)(\w+)', FLAGS.model_dir).pop())
-            directory = FLAGS.model_dir.split(fileName)[0]
+            fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
+            directory = OPTIONS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
-            if (FLAGS.nn_model.lower() == 'cnn'):
-                if (FLAGS.pipeline is not ""):
-                    pipelinePath = FLAGS.pipeline
+            if (OPTIONS.nn_model.lower() == 'cnn'):
+                if (OPTIONS.pipeline is not ""):
+                    pipelinePath = OPTIONS.pipeline
                 else:
-                    pipelinePath = FLAGS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
-                model = ConvNet(volChannels=FLAGS.conv_vol_depth, irChannels=FLAGS.conv_ir_depth, predictOp=predictOp,
+                    pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
+                model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, predictOp=predictOp,
                                 pipeline=getPipeLine(pipelinePath))
-            elif (FLAGS.nn_model.lower() == 'lstm'):
+            elif (OPTIONS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
-            swo = inst.get_swaptiongen(getIrModel(), FLAGS.currency, FLAGS.irType)
-            _, values, vals, params = swo.compare_history(model, modelName, dataLength=FLAGS.batch_width, session=sess,
-                                                          x_pl=x_pl, skip=FLAGS.skip, plot_results=False,
-                                                          fullTest=FLAGS.full_test)
+            swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
+            _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width, session=sess,
+                                                          x_pl=x_pl, skip=OPTIONS.skip, plot_results=False,
+                                                          fullTest=OPTIONS.full_test)
 
-            np.save(FLAGS.checkpoint_dir + modelName + "Values.npy", values)
-            np.save(FLAGS.checkpoint_dir + modelName + "Vals.npy", vals)
-            np.save(FLAGS.checkpoint_dir + modelName + "Params.npy", params)
+            np.save(OPTIONS.checkpoint_dir + modelName + "Values.npy", values)
+            np.save(OPTIONS.checkpoint_dir + modelName + "Vals.npy", vals)
+            np.save(OPTIONS.checkpoint_dir + modelName + "Params.npy", params)
 
 
 if __name__ == '__main__':
@@ -378,6 +388,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
+    parser.add_argument('--scaler', type=str, default='minmax', help='Scaler')
     parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
@@ -394,8 +405,10 @@ if __name__ == '__main__':
     parser.add_argument('--suffix', type=str, default="", help='Custom string identifier for modelName')
     parser.add_argument('--exportForwardRates', action='store_true',
                         help='Calculate and save spot rates to forward rates')
+    parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
+                        help='Future reference count of days after initial reference day')
 
-    FLAGS, unparsed = parser.parse_known_args()
-    modelName = FLAGS.suffix + FLAGS.nn_model + "_A" + ''.join(FLAGS.architecture) + "_w" + str(
-        FLAGS.batch_width) + "_v" + str(FLAGS.conv_vol_depth) + "_ir" + str(FLAGS.conv_ir_depth)
+    OPTIONS, unparsed = parser.parse_known_args()
+    modelName = OPTIONS.suffix + OPTIONS.nn_model + "_A" + ''.join(OPTIONS.architecture) + "_w" + str(
+        OPTIONS.batch_width) + "_v" + str(OPTIONS.conv_vol_depth) + "_ir" + str(OPTIONS.conv_ir_depth)
     tf.app.run()

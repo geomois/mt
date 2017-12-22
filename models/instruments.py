@@ -50,7 +50,7 @@ class IRCurve(du.TimeSeriesData):
         self.name = h5_irc_node + '_' + ccy + '_' + tenor
         self.name = self.name.lower()
         self.key_ts = parentNode + '/' + h5_irc_node + '/' + self.ccy + '/' + tenor.upper()
-        self._daycounter = ql.ActualActual()
+        self._daycounter = ql.Actual360()
         self.values = None
         super(IRCurve, self).__init__(self.key_ts, file_name=du.h5file, data=data)
 
@@ -202,7 +202,6 @@ class SwaptionGen(du.TimeSeriesData):
         # Yield Curve and dates
         self._ircurve = IRCurve(self.ccy, to_tenor(index, irType), parentNode=parentNode, data=irData)
         self._dates = self.intersection(self._ircurve)
-        pdb.set_trace()
         self.refdate = ql.Date(self._dates[0].day, self._dates[0].month, self._dates[0].year)
         ql.Settings.instance().evaluationDate = self.refdate
         self._term_structure = ql.RelinkableYieldTermStructureHandle()
@@ -983,13 +982,23 @@ class SwaptionGen(du.TimeSeriesData):
             plt.savefig(modelName + '.png')
         return (dates, values, vals, params)
 
-    def calcForward(self, export, path):
+    def calcForward(self, path=None, futureIncrementInDays=180):
+        fwCurves = pd.DataFrame(columns=["ReferenceDate", "FutureDate", "Tenor", "Rate"])
         for date in self._dates:
             ts = pd.Timestamp(date)
-            dt = ql.Date(ts.day, ts.month, ts.year)
-            fDate = dt + ql.Period(1, ql.Years)
-            getImpliedForwardCurve()
+            refDate = ql.Date(ts.day, ts.month, ts.year)
+            futureDate = refDate + ql.Period(futureIncrementInDays, ql.Days)
+            curve = getImpliedForwardCurve(futureDate, self._ircurve[date])
+            fwRates = []
+            for T in du.irDateInDays:
+                tenor = (T / 365.0) if (T / 365) <= curve.maxTime() else curve.maxTime()
+                refD = pd.to_datetime(ql.Date.to_date(refDate))
+                fD = pd.to_datetime(ql.Date.to_date(futureDate))
+                fwRates.append((refD, fD, T, curve.zeroRate(tenor, ql.Continuous).rate()))
+            fwCurves = fwCurves.append(pd.DataFrame(fwRates, columns=fwCurves.columns.tolist()))
 
+        if (path is not None):
+            fwCurves.to_csv(path, index=False)
 
 
 class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):
