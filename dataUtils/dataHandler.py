@@ -10,7 +10,7 @@ import datetime as dt
 class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
                  , testDataPercentage=0.2, batchSize=50, width=50, volDepth=156,
-                 irDepth=44, sliding=True, useDataPointers=True, randomSplit=False, datePointer=False, save=False,
+                 irDepth=44, sliding=True, useDataPointers=False, randomSplit=False, datePointer=False, save=False,
                  specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None):
         target = 'params' if targetDataMode is None else targetDataMode
         if (targetDataPath is not None and targetDataMode is None):
@@ -99,7 +99,8 @@ class DataHandler(object):
 
         if fileType.lower() == 'csv':
             for path, mode in fileList:
-                cleanMode = mode if mode not in self.targetName else 'target'
+                # next line is a patch of a patch, needs cleaning
+                cleanMode = mode if mode not in self.targetName or self.targetName.lower() == 'deltair' else 'target'
                 if (clean):
                     df, npy = dbc.cleanCsv(path, mode=cleanMode, toNNData=True, exportPath=True, dbFormat=True)
                 else:
@@ -182,6 +183,9 @@ class DataHandler(object):
             self.lastBatchPointer = 0
             if (self.delegatedFromFile):
                 modulo = len(self.trainData["input"])
+                if (self.predictive is not None):
+                    self._feedTransform('train')
+                    # modulo = len(self.trainData["input"])
                 if (pipeline is not None):
                     # pdb.set_trace()
                     self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
@@ -206,10 +210,6 @@ class DataHandler(object):
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                     modulo = len(self.inputSegments)
 
-            if (self.predictive is not None and not self.useDataPointers):
-                self._feedTransform('train')
-                modulo = len(self.trainData["input"])
-
             if (randomDraw):
                 indices = np.random.randint(0, high=len(self.trainData["input"]), size=batchSize)
                 trainX = self.trainData["input"][indices]
@@ -229,8 +229,7 @@ class DataHandler(object):
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
                     suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
-                        self.segmentWidth) + '_' + str(
-                        self.volDepth) + '_' + str(self.irDepth)
+                        self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
@@ -248,6 +247,8 @@ class DataHandler(object):
 
     def _feedTransform(self, data):
         """
+        Reshapes input [batch,1,width,depth] data to [(depth*batch -1),1,width,1] data
+        and output [batch,<shape>] or [batch,1,width,depth] to [(width*depth*batch)-1,1]
         :param data: data pointer
         :return: reshaped  x, y
         """
@@ -272,17 +273,26 @@ class DataHandler(object):
             outWidth = targetShape[2]
         if (inWidth > targetShape[2]):
             inWidth = targetShape[2]
+        if (self.targetName.lower() == 'deltair'):
+            output = targetDict['output']
+            window = inWidth
+            targetArray = np.empty((0, 1))
+            for i in range(0, targetShape[0] - window):
+                for j in range(output.shape[1]):
+                    targetArray = np.vstack((output[i + window, j].reshape(-1, 1), targetArray))
+            targetDict['output'] = targetArray
+        else:
+            targetDict['output'] = self._reshapeToPredict(
+                np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1, 1))  # skip first
 
-        targetDict['output'] = self._reshapeToPredict(
-            np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1, 1))  # skip first
         targetDict['input'] = self._reshapeToPredict(
-            np.asarray(targetDict['input'][:targetShape[0] - 1, :, :inWidth, start:end]))  # skip last
+            np.asarray(targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, start:end]))  # skip last
 
     def _reshapeToPredict(self, array):
         o = np.empty((0, 1, array.shape[2], 1))
         for i in range(array.shape[0]):
             temp = array[i, :].T.reshape(array.shape[3], 1, array.shape[2], 1)
-            o = np.vstack((temp, o))
+            o = np.vstack((o, temp))
         return o
 
     def fitPipeline(self, pipeline):
@@ -310,7 +320,7 @@ class DataHandler(object):
             self.volatilities = data
         elif (mode.lower() == 'ir'):
             self.ir = data
-        elif (mode.lower() == self.targetName):
+        elif (mode.lower() == self.targetName.lower()):
             self.target = data
 
     def reshapeFromPointers(self, width, volDepth, irDepth, indices, startPointer=0, nbBatches=10, train=False,
@@ -342,7 +352,6 @@ class DataHandler(object):
     def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
         targetSegments = np.empty((0, self.target.shape[0]))
-        # bad memory handling, we could only keep coordinates of each chunk
         while (True):
             vol, ir, target, traversedDataset = self._buildBatch(width, volDepth, irDepth, pointers=pointers)
             if (pointers):
@@ -351,7 +360,6 @@ class DataHandler(object):
                 self.dataPointers[self.targetName].append(target)
             else:
                 inPut = self._mergeReashapeInput(vol, ir)
-                # pdb.set_trace()
                 inSegments = np.vstack((inSegments, inPut))
                 targetSegments = np.vstack((targetSegments, target))
             if (traversedDataset):

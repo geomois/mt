@@ -105,7 +105,8 @@ def buildCnn(dataHandler, swaptionGen=None):
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
     if (OPTIONS.pipeline is not ""):
-        pipeline = dataHandler.fitPipeline(getPipeLine())
+        # pipeline = dataHandler.fitPipeline(getPipeLine())
+        pipeline = getPipeLine()
 
     cnn = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, poolingLayerFlag=poolingFlag,
                   architecture=OPTIONS.architecture, fcUnits=OPTIONS.fullyConnectedNodes, pipeline=pipeline,
@@ -181,8 +182,8 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                 np.save(derivative[0], checkpointFolder + "testDerivatives.npy")
 
         tf.reset_default_graph()
-    except:
-        print("Exception during training")
+    except Exception as ex:
+        print("Exception during training: ", str(ex))
         tf.reset_default_graph()
 
     return pipeline
@@ -212,11 +213,13 @@ def setupDataHandler():
     else:
         predShape = None
         specialFilePrefix = ''
+
     dataFileName = OPTIONS.volFileName if OPTIONS.volFileName is not None else OPTIONS.irFileName
     dataHandler = DataHandler(dataFileName=dataFileName, batchSize=OPTIONS.batch_size, width=OPTIONS.batch_width,
                               volDepth=int(OPTIONS.data_vol_depth), irDepth=int(OPTIONS.data_ir_depth),
                               useDataPointers=OPTIONS.use_calibration_loss, save=OPTIONS.saveProcessedData,
-                              specialFilePrefix=specialFilePrefix, predictiveShape=predShape)
+                              specialFilePrefix=specialFilePrefix, predictiveShape=predShape,
+                              targetDataMode=OPTIONS.target)
     if (OPTIONS.processedData):
         fileList = dataHandler.findTwinFiles(dataFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
@@ -412,6 +415,7 @@ if __name__ == '__main__':
                         help='Computes partial derivative wrt the neural network input')
     parser.add_argument('--full_test', action='store_true', help='Calibrate history with new starting points++')
     parser.add_argument('--suffix', type=str, default="", help='Custom string identifier for modelName')
+    parser.add_argument('--target', type=str, default=None, help='Use specific data target')
     parser.add_argument('--exportForwardRates', action='store_true',
                         help='Calculate and save spot rates to forward rates')
     parser.add_argument('-fd', '--futureIncrement', type=int, default=365,

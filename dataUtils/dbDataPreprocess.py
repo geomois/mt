@@ -228,7 +228,8 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, target=False):
 
 
 def shortClean(dFrame, columns=['MDT_ID', 'MDE_ID', 'CURVE_ID_1', 'CURVE_ID_2', 'CURVE_ID_3', 'GMDB_SYMBOL', 'PNT_ID',
-                                'CURVE_UNIFIED', 'Z1', 'MONEYNESS', "FutureDate", "Tenor"], hasDuplicates=False):
+                                'CURVE_UNIFIED', 'Z1', 'MONEYNESS', "FutureDate"],
+               hasDuplicates=False):
     dat = dFrame.copy()
     if (hasDuplicates):
         dat = dropDuplicates(dat)
