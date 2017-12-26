@@ -181,13 +181,11 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                 derivative = np.asarray(derivative[0]).reshape((-1, testX.shape[2]))
                 step = dataHandler.channelEnd - dataHandler.channelStart
                 datapoints = int(testX.shape[0] / step)
-                der = np.empty((0, datapoints, 1))
+                der = np.empty((0, datapoints))
                 for i in range(step):
-                    temp = np.empty((0, derivative.shape[1]))
-                    pdb.set_trace()
+                    temp = []
                     for j in range(i, testX.shape[0], step):
-                        temp = np.vstack((np.abs(np.average(derivative[j])), temp))
-                    pdb.set_trace()
+                        temp.append(np.abs(np.average(derivative[j])))
                     der = np.vstack((temp, der))
 
                 np.save(checkpointFolder + "testDerivatives.npy", derivative[0])
