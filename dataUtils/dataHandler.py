@@ -50,6 +50,8 @@ class DataHandler(object):
         self.runId = None
         self.randomSpliting = randomSplit
         self.specialPrefix = specialFilePrefix
+        self.channelStart = None
+        self.channelEnd = None
         # predictive tuple (label = "vol" or "ir", [inputWidth, outputWidth])
         self.predictive = predictiveShape
         self.targetDataPath = targetDataPath
@@ -259,16 +261,21 @@ class DataHandler(object):
         mode = self.predictive[0]
         inWidth = int(self.predictive[1][0])
         outWidth = int(self.predictive[1][1])
+        if (len(self.predictive[2])) > 1:
+            channelRange = [int(self.predictive[2][0]), int(self.predictive[2][1])]
+        elif (len(self.predictive[2])) > 1:
+            channelRange = [0, int(self.predictive[2][1])]
         depth = 1
         if (len(self.predictive[1]) > 2):
             depth = int(self.predictive[1][2])
         targetShape = np.asarray(targetDict['input']).shape
         if (mode.lower() is self.modes[0]):
-            start = 0
-            end = self.volDepth
+            self.channelStart = 0
+            self.channelEnd = self.volDepth
         else:
-            start = self.volDepth
-            end = targetShape[3]
+            self.channelStart = self.volDepth + channelRange[0]
+            self.channelEnd = targetShape[3] if channelRange[1] <= 0 else channelRange[1]
+
         if (outWidth > targetShape[2]):
             outWidth = targetShape[2]
         if (inWidth > targetShape[2]):
@@ -278,15 +285,18 @@ class DataHandler(object):
             window = inWidth
             targetArray = np.empty((0, 1))
             for i in range(0, targetShape[0] - window):
-                for j in range(output.shape[1]):
+                for j in range(self.channelEnd):
                     targetArray = np.vstack((output[i + window, j].reshape(-1, 1), targetArray))
             targetDict['output'] = targetArray
         else:
             targetDict['output'] = self._reshapeToPredict(
-                np.asarray(targetDict['input'][1:, :, :outWidth, start:end])).reshape((-1, 1))  # skip first
+                np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd])).reshape(
+                (-1, 1))  # skip first
 
         targetDict['input'] = self._reshapeToPredict(
-            np.asarray(targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, start:end]))  # skip last
+            np.asarray(
+                targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
+                self.channelStart:self.channelEnd]))  # skip last
 
     def _reshapeToPredict(self, array):
         o = np.empty((0, 1, array.shape[2], 1))

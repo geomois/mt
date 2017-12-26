@@ -126,9 +126,8 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
         global_step = tf.Variable(0, trainable=False)
-        with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
+        with tf.Session(config=getTfConfig()) as sess:
             sess.run(tf.global_variables_initializer())
             timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
@@ -157,6 +156,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             for epoch in range(OPTIONS.max_steps):
                 sess.run(global_step.assign(epoch))
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
+                # pdb.set_trace()
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y})
                 if epoch % OPTIONS.print_frequency == 0:
@@ -177,12 +177,24 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                 if epoch % OPTIONS.checkpoint_freq == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
             if (gradient is not None):
-                pdb.set_trace()
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
-                np.save(derivative[0], checkpointFolder + "testDerivatives.npy")
+                derivative = np.asarray(derivative[0]).reshape((-1, testX.shape[2]))
+                step = dataHandler.channelEnd - dataHandler.channelStart
+                datapoints = int(testX.shape[0] / step)
+                der = np.empty((0, datapoints, 1))
+                for i in range(step):
+                    temp = np.empty((0, derivative.shape[1]))
+                    pdb.set_trace()
+                    for j in range(i, testX.shape[0], step):
+                        temp = np.vstack((np.abs(np.average(derivative[j])), temp))
+                    pdb.set_trace()
+                    der = np.vstack((temp, der))
+
+                np.save(checkpointFolder + "testDerivatives.npy", derivative[0])
 
         tf.reset_default_graph()
     except Exception as ex:
+        pdb.set_trace()
         print("Exception during training: ", str(ex))
         tf.reset_default_graph()
 
@@ -208,7 +220,7 @@ def setupDataHandler():
             mode = 'ir'
         else:
             raise ValueError('File name is not correct')
-        predShape = (mode, OPTIONS.predictiveShape)
+        predShape = (mode, OPTIONS.predictiveShape, OPTIONS.channel_range)
         specialFilePrefix = "_M" + mode + ''.join(OPTIONS.predictiveShape)
     else:
         predShape = None
@@ -269,6 +281,16 @@ def getPipeLine(fileName=None):
     return pipeline
 
 
+def getTfConfig():
+    if (OPTIONS.use_cpu):
+        config = tf.ConfigProto(device_count={'GPU': 0})
+    else:
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
+        config = tf.ConfigProto(gpu_options=gpuMem)
+
+    return config
+
+
 def main(_):
     print_flags()
     initDirectories()
@@ -305,8 +327,7 @@ def main(_):
             raise ValueError("--train_model argument can be lstm or cnn")
 
     if OPTIONS.compare:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
-        with tf.Session(config=tf.ConfigProto(gpu_options=gpuMem)) as sess:
+        with tf.Session(config=getTfConfig()) as sess:
             fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
             directory = OPTIONS.model_dir.split(fileName)[0]
             predictOp, x_pl = importSavedNN(sess, directory, fileName)
@@ -409,10 +430,12 @@ if __name__ == '__main__':
     parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
     parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
                         help='Comma separated list of numbers for the input and output depth of the nn')
+    parser.add_argument('-cr', '--channel_range', nargs='+', default=5,
+                        help='Comma separated list of numbers specifying the channel range from the data')
     parser.add_argument('--with_gradient', action='store_true',
                         help='Computes partial derivative wrt the neural network input')
     parser.add_argument('-up', '--use_pipeline', action='store_true',
-                        help='Computes partial derivative wrt the neural network input')
+                        help='Use of pipeline for pre-processing')
     parser.add_argument('--full_test', action='store_true', help='Calibrate history with new starting points++')
     parser.add_argument('--suffix', type=str, default="", help='Custom string identifier for modelName')
     parser.add_argument('--target', type=str, default=None, help='Use specific data target')
@@ -420,8 +443,14 @@ if __name__ == '__main__':
                         help='Calculate and save spot rates to forward rates')
     parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
                         help='Future reference count of days after initial reference day')
+    parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
 
     OPTIONS, unparsed = parser.parse_known_args()
-    modelName = OPTIONS.suffix + OPTIONS.nn_model + "_A" + ''.join(OPTIONS.architecture) + "_w" + str(
+    predShape = ''
+    if (OPTIONS.predictiveShape is not None):
+        cR = '-'.join(OPTIONS.channel_range) if type(OPTIONS.channel_range) == list else str(OPTIONS.channel_range)
+        predShape = str('Ps' + '-'.join(OPTIONS.predictiveShape) + '-' + cR + '_')
+
+    modelName = OPTIONS.suffix + predShape + OPTIONS.nn_model + "_A" + ''.join(OPTIONS.architecture) + "_w" + str(
         OPTIONS.batch_width) + "_v" + str(OPTIONS.conv_vol_depth) + "_ir" + str(OPTIONS.conv_ir_depth)
     tf.app.run()
