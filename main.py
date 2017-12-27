@@ -64,7 +64,8 @@ WEIGHT_REGULARIZER_DICT = {'none': tf.contrib.layers.l1_regularizer,  # No regul
 ACTIVATION_DICT = {'relu': tf.nn.relu,  # ReLU
                    'elu': tf.nn.elu,  # ELU
                    'tanh': tf.tanh,  # Tanh
-                   'sigmoid': tf.sigmoid}  # Sigmoid
+                   'sigmoid': tf.sigmoid,  # Sigmoid
+                   'none': None}
 
 OPTIMIZER_DICT = {'sgd': tf.train.GradientDescentOptimizer,  # Gradient Descent
                   'adadelta': tf.train.AdadeltaOptimizer,  # Adadelta
@@ -104,12 +105,20 @@ def buildCnn(dataHandler, swaptionGen=None):
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
-    if (OPTIONS.pipeline is not ""):
-        # pipeline = dataHandler.fitPipeline(getPipeLine())
-        pipeline = getPipeLine()
+    # if (OPTIONS.pipeline is not ""):
+    #     # pipeline = dataHandler.fitPipeline(getPipeLine())
+    #     pipeline = getPipeLine()
 
+    if (OPTIONS.use_pipeline):
+        pipeline = dataHandler.initializePipeline(getPipeLine())
+    try:
+        activation = [ACTIVATION_DICT[act] for act in OPTIONS.activation]
+    except:
+        activation = [ACTIVATION_DICT[ACTIVATION_DEFAULT]]
+        pass
     cnn = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, poolingLayerFlag=poolingFlag,
                   architecture=OPTIONS.architecture, fcUnits=OPTIONS.fullyConnectedNodes, pipeline=pipeline,
+                  activationFunctions=activation,
                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
     pred = cnn.inference(x_pl)
     tf.add_to_collection("predict", pred)
@@ -119,7 +128,7 @@ def buildCnn(dataHandler, swaptionGen=None):
     else:
         loss = cnn.loss(pred, y_pl)
 
-    return dataHandler, loss, pred, x_pl, y_pl, testX, testY
+    return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline
 
 
 def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
@@ -132,8 +141,6 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
-            if (pipeline is None and OPTIONS.use_pipeline):
-                pipeline = getPipeLine()
 
             if (OPTIONS.decay_rate > 0):
                 learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate, global_step=global_step,
@@ -150,6 +157,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             if (OPTIONS.with_gradient):
                 # gradient = tf.gradients(loss, x_pl)
                 gradient = tf.gradients(pred, x_pl)
+                tf.add_to_collection("gradient", gradient)
                 # optimizer.compute_gradients()
 
             checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
@@ -168,8 +176,10 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                           "{:.6f}".format(out))
                 if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
                     if (epoch == OPTIONS.test_frequency and pipeline is not None):
-                        print("Transforming test")
-                        testY = pipeline.transform(testY)
+                        if (pipeline.steps[1][1] is not None): #apply scaler
+                            print("Transforming test")
+                            # testY = pipeline.transform(testY)
+                            testX = pipeline.transform(testX)
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
@@ -187,8 +197,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                     for j in range(i, testX.shape[0], step):
                         temp.append(np.abs(np.average(derivative[j])))
                     der = np.vstack((temp, der))
-
-                np.save(checkpointFolder + "testDerivatives.npy", derivative[0])
+                np.save(checkpointFolder + "testDerivatives.npy", der)
 
         tf.reset_default_graph()
     except Exception as ex:
@@ -262,17 +271,18 @@ def getIrModel():
 def getPipeLine(fileName=None):
     if (fileName is None):
         irModel = getIrModel()
-        if (OPTIONS.predictiveShape is not None):
+        if (OPTIONS.no_transform):
             transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
         else:
             transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
                                                                 inv_func=irModel["inverse_transformation"])
-        if (OPTIONS.scaler.lower() in SCALER_DICT):
-            scaler = SCALER_DICT[OPTIONS.scaler]
-        else:
-            scaler = SCALER_DICT['minmax']
 
-        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', scaler())])
+        if (OPTIONS.scaler.lower() in SCALER_DICT):
+            scaler = SCALER_DICT[OPTIONS.scaler]()
+        else:
+            scaler = None
+
+        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', scaler)])
     else:
         pipeline = joblib.load(fileName)
 
@@ -312,8 +322,8 @@ def main(_):
     if OPTIONS.is_train:
         dh = setupDataHandler()
         if OPTIONS.nn_model == 'cnn':
-            dataHandler, loss, pred, x_pl, y_pl, testX, testY = buildCnn(dh, swaptionGen=swo)
-            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY)
+            dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline = buildCnn(dh, swaptionGen=swo)
+            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline)
             if (pipeline is not None):
                 pipelinePath = OPTIONS.checkpoint_dir + modelName
                 if (not os.path.exists(pipelinePath)):
@@ -335,8 +345,7 @@ def main(_):
                 else:
                     pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
                 model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
-                                predictOp=predictOp,
-                                pipeline=getPipeLine(pipelinePath))
+                                predictOp=predictOp, pipeline=getPipeLine(pipelinePath))
             elif (OPTIONS.nn_model.lower() == 'lstm'):
                 # model = LSTM(predictOp = predictOp)
                 pass
@@ -385,7 +394,7 @@ if __name__ == '__main__':
     parser.add_argument('-wrs', '--weight_reg_strength', type=float, default=WEIGHT_REGULARIZER_STRENGTH_DEFAULT,
                         help='Regularizer strcength for weights of fully-connected layers.')
     parser.add_argument('--dropout_rate', type=float, default=DROPOUT_RATE_DEFAULT, help='Dropout rate.')
-    parser.add_argument('--activation', type=str, default=ACTIVATION_DEFAULT,
+    parser.add_argument('--activation', nargs='+', default=ACTIVATION_DEFAULT,
                         help='Activation function [relu, elu, tanh, sigmoid].')
     parser.add_argument('-o', '--optimizer', type=str, default=OPTIMIZER_DEFAULT,
                         help='Optimizer to use [sgd, adadelta, adagrad, adam, rmsprop].')
@@ -442,6 +451,7 @@ if __name__ == '__main__':
     parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
                         help='Future reference count of days after initial reference day')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
+    parser.add_argument('--no_transform', action='store_true', help="Don't transform data with pipeline")
 
     OPTIONS, unparsed = parser.parse_known_args()
     predShape = ''

@@ -180,7 +180,6 @@ def fixColumnNamesAndFieldFormats(df, dbFormat=False):
             df = df.rename(index=str, columns={c: term2})
 
     terms = []
-    # pdb.set_trace()
     if (len(columns) > 1):
         df = df.sort_values(['Date', term1, term2])
         terms = [term1, term2]

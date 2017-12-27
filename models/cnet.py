@@ -18,6 +18,7 @@ class ConvNet(object):
         self.depths = deque(depths)
         self.poolingFlag = poolingLayerFlag
         self.functionDict = {'init': weightInitializer, 'reg': weightRegularizer, 'act': activationFunctions}
+        self.functionDictDefault = {'init': weightInitializer, 'reg': weightRegularizer, 'act': activationFunctions}
         self.predictOp = predictOp
         self.inChannels = volChannels + irChannels
         self.volChannels = volChannels
@@ -38,6 +39,9 @@ class ConvNet(object):
         flatcount = 0
         densecount = 0
         convcount = 0
+        if (self.pipeline is not None):
+            x = self.npToTfFunc(self.pipeline.steps[0][1].func, x)
+
         with tf.variable_scope('ConvNet'):
             for i, l in enumerate(self.architecture):
                 if (l.lower() == 'c' or l.lower() == "conv"):
@@ -70,6 +74,20 @@ class ConvNet(object):
                                                  initializer=self._getFunction('init', 'd')())
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     densecount += 1
+        if (self.pipeline is not None):
+            layer = self.npToTfFunc(self.pipeline.steps[0][1].inv_func, layer)
+        return layer
+
+    def npToTfFunc(self, func, layer):
+        if (func is not None):
+            if (func is np.exp):
+                layer = tf.exp(layer)
+            elif (func is np.log):
+                layer = tf.log(layer)
+            else:
+                layer = self.pipeline.inverse_transform(layer)
+        else:
+            pass
 
         return layer
 
@@ -88,7 +106,7 @@ class ConvNet(object):
         bias = tf.get_variable("b", depth * nbChannels, initializer=tf.constant_initializer(0))
         layer = tf.nn.depthwise_conv2d(x, kernel, strides=[1, 1, 1, 1], padding='SAME')  # NHWC
         pre_activation = tf.nn.bias_add(layer, bias)
-        layer = activationFunc(features=pre_activation, name='activation')
+        layer = activationFunc(pre_activation, name='activation')
 
         self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
         self._variable_summaries(kernel, tf.get_variable_scope().name + '/weights')
@@ -97,15 +115,16 @@ class ConvNet(object):
     def _maxPoolLayer(self, x, kernelSize, stride):
         return tf.nn.max_pool(x, ksize=[1, 1, kernelSize, 1], strides=[1, 1, stride, 1], padding='SAME')
 
-    def _denseLayer(self, x, units, activationFunc=tf.nn.relu, regularizer=tf.contrib.layers.l2_regularizer,
+    def _denseLayer(self, x, units, activationFunc=None, regularizer=tf.contrib.layers.l2_regularizer,
                     initializer=tf.contrib.layers.xavier_initializer()):
         # pdb.set_trace()
         weights = tf.get_variable("w", [x.get_shape()[1], units], regularizer=regularizer(self.regularizationStrength),
                                   initializer=initializer)
 
         bias = tf.get_variable("b", [units], initializer=tf.constant_initializer(0.1))
-        # layer = tf.nn.elu(tf.add(tf.matmul(x, weights), bias))
         layer = tf.add(tf.matmul(x, weights), bias)
+        if (activationFunc is not None):
+            layer = activationFunc(layer)
         self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
         self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
         return layer
@@ -123,15 +142,16 @@ class ConvNet(object):
                 return functionList[layerType]
         else:
             if len(functionList) > 0:
-                functionList = deque(functionList)
-                return functionList.popleft()
+                self.functionDict[functionType] = deque(functionList)
+                return self.functionDict[functionType].popleft()
 
-        if (functionType == 'init'):
-            return tf.contrib.layers.xavier_initializer
-        elif (functionType == 'reg'):
-            return tf.contrib.layers.l2_regularizer
-        elif (functionType == 'act'):
-            return tf.nn.relu
+        return self.functionDictDefault[functionType][0]
+        # if (functionType == 'init'):
+        #     return tf.contrib.layers.xavier_initializer
+        # elif (functionType == 'reg'):
+        #     return return self.functionDict[functionType][0]
+        # elif (functionType == 'act'):
+        #     return self.functionDict[functionType][0]
 
     def _variable_summaries(self, var, name):
         with tf.name_scope('summaries'):
@@ -157,6 +177,7 @@ class ConvNet(object):
             # cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy')
             # loss = tf.reduce_mean(cross_entropy)
             # loss = tf.add(loss, sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
+            # tf.losses.log_loss()
             loss = tf.losses.mean_squared_error(y, pred)
             tf.summary.scalar('loss_regularized', loss)
 

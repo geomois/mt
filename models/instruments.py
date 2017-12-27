@@ -1002,7 +1002,7 @@ class SwaptionGen(du.TimeSeriesData):
 
 
 class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):
-    def __init__(self, func=None, inv_func=None, validate=True,
+    def __init__(self, func=None, inv_func=None, validate=False,
                  accept_sparse=False, pass_y=False):
         self.validate = validate
         self.accept_sparse = accept_sparse
