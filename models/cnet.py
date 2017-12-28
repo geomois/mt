@@ -192,9 +192,14 @@ class ConvNet(object):
             x = np.float32(vol[:, :self.volChannels])
         if (self.irChannels > 0):
             x = np.hstack((x, np.float32(ir[:, :self.irChannels])))
-
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
+
+        if (self.pipeline is not None):
+            x = self.npToTfFunc(self.pipeline.steps[0][1].func, x)
+
         out = sess.run([self.predictOp], feed_dict={x_pl: x})
+
+        pdb.set_trace()
         out = np.asarray(out).reshape((1, 2))
         if (self.pipeline is not None):
             out = self.pipeline.inverse_transform(out)

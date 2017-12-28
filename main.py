@@ -97,10 +97,12 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None):
     testX, testY = dataHandler.getTestData()
+    print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
     if (int(OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
         print("Aligning...")
         OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1] = testY.shape[1]
+    print("Output dims" + str((None, testY.shape[1])))
     x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
@@ -157,7 +159,6 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             if (OPTIONS.with_gradient):
                 # gradient = tf.gradients(loss, x_pl)
                 gradient = tf.gradients(pred, x_pl)
-                tf.add_to_collection("gradient", gradient)
                 # optimizer.compute_gradients()
 
             checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
@@ -176,7 +177,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                           "{:.6f}".format(out))
                 if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
                     if (epoch == OPTIONS.test_frequency and pipeline is not None):
-                        if (pipeline.steps[1][1] is not None): #apply scaler
+                        if (pipeline.steps[1][1] is not None):  # apply scaler
                             print("Transforming test")
                             # testY = pipeline.transform(testY)
                             testX = pipeline.transform(testX)
@@ -188,16 +189,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                     saver.save(sess, checkpointFolder + str(epoch))
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
-                derivative = np.asarray(derivative[0]).reshape((-1, testX.shape[2]))
-                step = dataHandler.channelEnd - dataHandler.channelStart
-                datapoints = int(testX.shape[0] / step)
-                der = np.empty((0, datapoints))
-                for i in range(step):
-                    temp = []
-                    for j in range(i, testX.shape[0], step):
-                        temp.append(np.abs(np.average(derivative[j])))
-                    der = np.vstack((temp, der))
-                np.save(checkpointFolder + "testDerivatives.npy", der)
+                saveDerivatives(derivative, dataHandler, testX, checkpointFolder)
 
         tf.reset_default_graph()
     except Exception as ex:
@@ -206,6 +198,26 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
         tf.reset_default_graph()
 
     return pipeline
+
+
+def saveDerivatives(derivative, dataHandler, testX, folder=None):
+    if (folder is None):
+        folder = OPTIONS.checkpoint_dir + modelName + "/"
+    derivative = np.asarray(derivative[0])
+    step = dataHandler.channelEnd - dataHandler.channelStart
+    if (testX.shape[3] is not 1):
+        derivative = dataHandler.reshapeMultiple(derivative, 1).reshape((-1, testX.shape[2]))
+    else:
+        derivative = derivative.reshape((-1, testX.shape[2]))
+
+    datapoints = int(derivative.shape[0] / step)
+    der = np.empty((0, datapoints))
+    for i in range(step):
+        temp = []
+        for j in range(i, derivative.shape[0], step):
+            temp.append(np.abs(np.average(derivative[j])))
+        der = np.vstack((temp, der))
+    np.save(folder + "testDerivatives.npy", der)
 
 
 def importSavedNN(session, modelPath, fileName):
@@ -299,6 +311,38 @@ def getTfConfig():
     return config
 
 
+def setupNetwork(session, gradientFlag=False):
+    fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
+    directory = OPTIONS.model_dir.split(fileName)[0]
+    predictOp, x_pl = importSavedNN(session, directory, fileName)
+    gradient = None
+    if (gradientFlag):
+        gradient = tf.gradients(predictOp, x_pl)
+    pipeline = None
+    if (OPTIONS.use_pipeline):
+        if (OPTIONS.pipeline is not ""):
+            pipelinePath = OPTIONS.pipeline
+        else:
+            pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
+        pipeline = getPipeLine(pipelinePath)
+
+    if (OPTIONS.nn_model.lower() == 'cnn'):
+        model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
+                        predictOp=predictOp, pipeline=pipeline)
+    elif (OPTIONS.nn_model.lower() == 'lstm'):
+        # model = LSTM(predictOp = predictOp)
+        pass
+    return model, predictOp, x_pl, gradient
+
+
+def savePipeline(pipeline):
+    if (pipeline is not None):
+        pipelinePath = OPTIONS.checkpoint_dir + modelName
+        if (not os.path.exists(pipelinePath)):
+            os.makedirs(pipelinePath)
+        joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
+
+
 def main(_):
     print_flags()
     initDirectories()
@@ -324,36 +368,31 @@ def main(_):
         if OPTIONS.nn_model == 'cnn':
             dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline = buildCnn(dh, swaptionGen=swo)
             pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline)
-            if (pipeline is not None):
-                pipelinePath = OPTIONS.checkpoint_dir + modelName
-                if (not os.path.exists(pipelinePath)):
-                    os.makedirs(pipelinePath)
-                joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
+            savePipeline(pipeline)
         elif OPTIONS.nn_model == 'lstm':
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
 
-    if OPTIONS.compare:
+    if OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
-            fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
-            directory = OPTIONS.model_dir.split(fileName)[0]
-            predictOp, x_pl = importSavedNN(sess, directory, fileName)
-            if (OPTIONS.nn_model.lower() == 'cnn'):
-                if (OPTIONS.pipeline is not ""):
-                    pipelinePath = OPTIONS.pipeline
-                else:
-                    pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
-                model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
-                                predictOp=predictOp, pipeline=getPipeLine(pipelinePath))
-            elif (OPTIONS.nn_model.lower() == 'lstm'):
-                # model = LSTM(predictOp = predictOp)
-                pass
+            model, predictOp, x_pl, gradient = setupNetwork(sess, gradientFlag=True)
+            dh = setupDataHandler()
+            testX, _ = dh.getTestData()
+            deriv = sess.run(gradient, feed_dict={x_pl: testX})
+            pdb.set_trace()
+            path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
+            saveDerivatives(deriv, dh, testX, path)
+            pdb.set_trace()
+            # if(OPTIONS.scaler is not None):
+
+    if OPTIONS.compare and not OPTIONS.calculate_gradient:
+        with tf.Session(config=getTfConfig()) as sess:
+            model, predictOp, x_pl, _ = setupNetwork(sess)
             swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
             _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
-                                                          session=sess,
-                                                          x_pl=x_pl, skip=OPTIONS.skip, plot_results=False,
-                                                          fullTest=OPTIONS.full_test)
+                                                          session=sess, x_pl=x_pl, skip=OPTIONS.skip,
+                                                          plot_results=False, fullTest=OPTIONS.full_test)
 
             np.save(OPTIONS.checkpoint_dir + modelName + "Values.npy", values)
             np.save(OPTIONS.checkpoint_dir + modelName + "Vals.npy", vals)
@@ -437,8 +476,8 @@ if __name__ == '__main__':
     parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
     parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
                         help='Comma separated list of numbers for the input and output depth of the nn')
-    parser.add_argument('-cr', '--channel_range', nargs='+', default=5,
-                        help='Comma separated list of numbers specifying the channel range from the data')
+    parser.add_argument('-cr', '--channel_range', nargs='+', default=['44'],
+                        help='Comma separated list specifying the channel range from the data')
     parser.add_argument('--with_gradient', action='store_true',
                         help='Computes partial derivative wrt the neural network input')
     parser.add_argument('-up', '--use_pipeline', action='store_true',
@@ -448,6 +487,8 @@ if __name__ == '__main__':
     parser.add_argument('--target', type=str, default=None, help='Use specific data target')
     parser.add_argument('--exportForwardRates', action='store_true',
                         help='Calculate and save spot rates to forward rates')
+    parser.add_argument('-cg', '--calculate_gradient', action='store_true',
+                        help='Imports saved nn weights and calculates the gradient wrt the input')
     parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
                         help='Future reference count of days after initial reference day')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
@@ -456,8 +497,8 @@ if __name__ == '__main__':
     OPTIONS, unparsed = parser.parse_known_args()
     predShape = ''
     if (OPTIONS.predictiveShape is not None):
-        cR = '-'.join(OPTIONS.channel_range) if type(OPTIONS.channel_range) == list else str(OPTIONS.channel_range)
-        predShape = str('Ps' + '-'.join(OPTIONS.predictiveShape) + '-' + cR + '_')
+        cR = '_'.join(OPTIONS.channel_range) if type(OPTIONS.channel_range) == list else str(OPTIONS.channel_range)
+        predShape = str('Ps' + '_'.join(OPTIONS.predictiveShape) + '_' + cR + '_')
 
     modelName = OPTIONS.suffix + predShape + OPTIONS.nn_model + "_A" + ''.join(OPTIONS.architecture) + "_w" + str(
         OPTIONS.batch_width) + "_v" + str(OPTIONS.conv_vol_depth) + "_ir" + str(OPTIONS.conv_ir_depth)

@@ -263,6 +263,7 @@ class DataHandler(object):
         :param data: data pointer
         :return: reshaped  x, y
         """
+        # region unravelling input
         if (data.lower() == "train"):
             targetDict = self.trainData
         else:
@@ -272,11 +273,11 @@ class DataHandler(object):
         outWidth = int(self.predictive[1][1])
         if (len(self.predictive[2])) > 1:
             channelRange = [int(self.predictive[2][0]), int(self.predictive[2][1])]
-        elif (len(self.predictive[2])) > 1:
-            channelRange = [0, int(self.predictive[2][1])]
-        depth = 1
+        else:
+            channelRange = [0, int(self.predictive[2][0])]
+        outDepth = 1
         if (len(self.predictive[1]) > 2):
-            depth = int(self.predictive[1][2])
+            outDepth = int(self.predictive[1][2])
         targetShape = np.asarray(targetDict['input']).shape
         if (mode.lower() is self.modes[0]):
             self.channelStart = 0
@@ -284,35 +285,44 @@ class DataHandler(object):
         else:
             self.channelStart = self.volDepth + channelRange[0]
             self.channelEnd = targetShape[3] if channelRange[1] <= 0 else channelRange[1]
-
         if (outWidth > targetShape[2]):
             outWidth = targetShape[2]
         if (inWidth > targetShape[2]):
             inWidth = targetShape[2]
+        # endregion unravelling input
+
         if (self.targetName.lower() == 'deltair'):
             output = targetDict['output']
             window = inWidth
-            targetArray = np.empty((0, 1))
+            targetArray = np.empty((0, outDepth))
             for i in range(0, targetShape[0] - window):
-                for j in range(self.channelEnd):
-                    targetArray = np.vstack((output[i + window, j].reshape(-1, 1), targetArray))
+                for j in range(self.channelStart, self.channelEnd, outDepth):
+                    colEnd = j + outDepth
+                    # rowEnd = i + window + outWidth TODO:implement future movement
+                    targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
             targetDict['output'] = targetArray
         else:
             targetDict['output'] = self._reshapeToPredict(
                 np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd])).reshape(
                 (-1, 1))  # skip first
-
-        targetDict['input'] = self._reshapeToPredict(
-            np.asarray(
-                targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
-                self.channelStart:self.channelEnd]))  # skip last
+        inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, :]  # skip last
+        targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
         self.transformed[data] = True
 
-    def _reshapeToPredict(self, array):
+    def _reshapeToPredict(self, array):  # CHECK
         o = np.empty((0, 1, array.shape[2], 1))
         for i in range(array.shape[0]):
-            temp = array[i, :].T.reshape(array.shape[3], 1, array.shape[2], 1)
+            temp = array[i, :].T.reshape(-1, 1, array.shape[2], 1)
             o = np.vstack((o, temp))
+        return o
+
+    def reshapeMultiple(self, array, depth):  # CHECK
+        o = np.empty((0, 1, array.shape[2], depth))
+        for i in range(array.shape[0]):
+            for j in range(self.channelStart, self.channelEnd, depth):
+                colEnd = j + depth
+                temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
+                o = np.vstack((o, temp))
         return o
 
     def fitPipeline(self, pipeline):
