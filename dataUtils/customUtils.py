@@ -2,6 +2,12 @@ import QuantLib as ql
 import matplotlib.pyplot as plt
 from datetime import date
 from matplotlib.dates import MonthLocator, DateFormatter
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.externals import joblib
+import os
+import models.instruments as inst
 import pdb
 
 
@@ -59,3 +65,48 @@ def getImpliedForwardCurve(futureDate, curve):
     initCurve = ql.ZeroCurve(dates, rates, curve.dayCounter())
     impliedCurve = ql.ImpliedTermStructure(ql.YieldTermStructureHandle(initCurve), futureDate)
     return impliedCurve
+
+
+def transformDerivatives(derivative, channelStart, channelEnd, testX):
+    derivative = np.asarray(derivative[0])
+    step = channelEnd - channelStart
+    if (testX.shape[3] is not 1):
+        derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, testX.shape[2]))
+    else:
+        derivative = derivative.reshape((-1, testX.shape[2]))
+
+    datapoints = int(derivative.shape[0] / step)
+    der = np.empty((0, datapoints))
+    for i in range(step):
+        temp = []
+        for j in range(i, derivative.shape[0], step):
+            temp.append(np.abs(np.average(derivative[j])))
+        der = np.vstack((der, temp))
+    return der
+
+
+def reshapeMultiple(array, depth, start, end):
+    o = np.empty((0, 1, array.shape[2], depth))
+    for i in range(array.shape[0]):
+        for j in range(start, end, depth):
+            colEnd = j + depth
+            temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
+            o = np.vstack((o, temp))
+    return o
+
+def loadSavedScaler(path, identifier=None):
+    pklList = []
+    for subdir, dirs, files in os.walk(path):
+        for f in files:
+            if f.endswith('.pkl'):
+                temp = joblib.load(subdir + "/" + f)
+                if (type(temp) == StandardScaler or type(temp) == MinMaxScaler):
+                    transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
+                    pp = pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', temp)])
+                    pklList.append(pp)
+                elif (type(temp) == Pipeline):
+                    pklList.append(temp)
+    if (len(pklList) == 0):
+        raise Exception('Empty pipeline folder')
+
+    return pklList

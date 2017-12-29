@@ -11,6 +11,7 @@ import re
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
+import dataUtils.customUtils as cu
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -189,7 +190,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                     saver.save(sess, checkpointFolder + str(epoch))
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
-                saveDerivatives(derivative, dataHandler, testX, checkpointFolder)
+                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         tf.reset_default_graph()
     except Exception as ex:
@@ -200,24 +201,14 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
     return pipeline
 
 
-def saveDerivatives(derivative, dataHandler, testX, folder=None):
-    if (folder is None):
-        folder = OPTIONS.checkpoint_dir + modelName + "/"
-    derivative = np.asarray(derivative[0])
-    step = dataHandler.channelEnd - dataHandler.channelStart
-    if (testX.shape[3] is not 1):
-        derivative = dataHandler.reshapeMultiple(derivative, 1).reshape((-1, testX.shape[2]))
-    else:
-        derivative = derivative.reshape((-1, testX.shape[2]))
+def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
+    der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX)
+    if (save):
+        if (folder is None):
+            folder = OPTIONS.checkpoint_dir + modelName + "/"
+        np.save(folder + "testDerivatives.npy", der)
 
-    datapoints = int(derivative.shape[0] / step)
-    der = np.empty((0, datapoints))
-    for i in range(step):
-        temp = []
-        for j in range(i, derivative.shape[0], step):
-            temp.append(np.abs(np.average(derivative[j])))
-        der = np.vstack((temp, der))
-    np.save(folder + "testDerivatives.npy", der)
+    return der
 
 
 def importSavedNN(session, modelPath, fileName):
@@ -315,24 +306,29 @@ def setupNetwork(session, gradientFlag=False):
     fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
     directory = OPTIONS.model_dir.split(fileName)[0]
     predictOp, x_pl = importSavedNN(session, directory, fileName)
-    gradient = None
+    gradientOp = None
+    operation = predictOp
     if (gradientFlag):
-        gradient = tf.gradients(predictOp, x_pl)
+        gradientOp = tf.gradients(predictOp, x_pl)
+        operation = gradientOp
     pipeline = None
     if (OPTIONS.use_pipeline):
-        if (OPTIONS.pipeline is not ""):
-            pipelinePath = OPTIONS.pipeline
-        else:
-            pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
-        pipeline = getPipeLine(pipelinePath)
+        try:
+            if (OPTIONS.pipeline is not ""):
+                pipelinePath = OPTIONS.pipeline
+            else:
+                pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
+            pipeline = getPipeLine(pipelinePath)
+        except:
+            pass
 
     if (OPTIONS.nn_model.lower() == 'cnn'):
         model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
-                        predictOp=predictOp, pipeline=pipeline)
+                        predictOp=operation, pipeline=pipeline, derive=gradientFlag)
     elif (OPTIONS.nn_model.lower() == 'lstm'):
         # model = LSTM(predictOp = predictOp)
         pass
-    return model, predictOp, x_pl, gradient
+    return model, predictOp, x_pl, gradientOp
 
 
 def savePipeline(pipeline):
@@ -377,14 +373,27 @@ def main(_):
     if OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
             model, predictOp, x_pl, gradient = setupNetwork(sess, gradientFlag=True)
-            dh = setupDataHandler()
-            testX, _ = dh.getTestData()
-            deriv = sess.run(gradient, feed_dict={x_pl: testX})
-            pdb.set_trace()
-            path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
-            saveDerivatives(deriv, dh, testX, path)
-            pdb.set_trace()
-            # if(OPTIONS.scaler is not None):
+            if OPTIONS.with_gradient:
+                dh = setupDataHandler()
+                testX, _ = dh.getTestData()
+                deriv = sess.run(gradient, feed_dict={x_pl: testX})
+                path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
+                transformDerivatives(deriv, dh, testX, path)
+            else:
+                if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
+                    pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
+                    model.setPipelineList(pipelineList)
+
+                swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
+                if (OPTIONS.calibrate_sigma):
+                    sigmas = swo.calibrate_sigma(model, modelName, dataLength=OPTIONS.batch_width,
+                                                 session=sess, x_pl=x_pl, skip=OPTIONS.skip)
+                    folder = OPTIONS.checkpoint_dir + modelName + "/"
+                    np.save(folder + "sigmas.npy", sigmas)
+                else:
+                    _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
+                                                                  session=sess, x_pl=x_pl, skip=OPTIONS.skip,
+                                                                  plot_results=False, fullTest=OPTIONS.full_test)
 
     if OPTIONS.compare and not OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
@@ -460,6 +469,7 @@ if __name__ == '__main__':
                         help='Checkpoint directory')
     parser.add_argument('-m', '--model', type=str, default='hullwhite', help='Interest rate model')
     parser.add_argument('--calibrate', action='store_true', help='Calibrate history')
+    parser.add_argument('--calibrate_sigma', action='store_true', help='Calibrate only sigma')
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')

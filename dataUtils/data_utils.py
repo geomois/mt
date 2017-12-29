@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
 from sklearn.externals import joblib
-from dataUtils.curveUtils import *
+from dataUtils.customUtils import *
 import pdb
 
 data_dir = '../data/'

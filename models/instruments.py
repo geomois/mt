@@ -13,7 +13,7 @@ from scipy.linalg import sqrtm
 import matplotlib.pyplot as plt
 import dataUtils.dbDataPreprocess as dbc
 from collections import deque
-from dataUtils.curveUtils import *
+from dataUtils.customUtils import *
 import pdb
 
 # import variational_autoencoder as vae
@@ -180,6 +180,7 @@ class SwaptionGen(du.TimeSeriesData):
     def __init__(self, index, model_dict,
                  error_type=ql.CalibrationHelper.ImpliedVolError,
                  parentNode=du.h5_ts_node, irType='libor', volData=None, irData=None, **kwargs):
+        self.customIndex = index
         self._model_dict = model_dict
         if not 'model' in self._model_dict \
                 or not 'engine' in self._model_dict \
@@ -211,6 +212,7 @@ class SwaptionGen(du.TimeSeriesData):
         self.index = index.clone(self._term_structure)
         self.model = self._model_dict['model'](self._term_structure)
         self.engine = self._model_dict['engine'](self.model, self._term_structure)
+        # self.setupModel()
 
         # Quotes & calibration helpers
         volas = self.__getitem__(self._dates[0])
@@ -248,6 +250,12 @@ class SwaptionGen(du.TimeSeriesData):
         self.ok_format = '%12s |%12s |%12s |%12s |%12s'
         self.err_format = '%2s |%12s |'
         self.values = None
+
+    def setupModel(self, alpha=0, sigma=0):
+        # Index, swaption model and pricing engine
+        self.index = self.customIndex.clone(self._term_structure)
+        self.model = self._model_dict['model'](self._term_structure, alpha, sigma)
+        self.engine = self._model_dict['engine'](self.model, self._term_structure)
 
     def set_date(self, date):
         # pdb.set_trace()
@@ -849,6 +857,64 @@ class SwaptionGen(du.TimeSeriesData):
                 objectives[i] = np.nan
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
+
+    def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, skip=0):
+        store = pd.HDFStore(du.h5file)
+        df = store[self.key_model]
+        sigmas = []
+        store.close()
+        self.refdate = ql.Date(1, 1, 1901)
+        vals = np.zeros((len(df.index), 4))
+        values = np.zeros((len(df.index), 13))
+        if dates is None:
+            dates = self._dates
+
+        method = ql.LevenbergMarquardt()
+        end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
+        lower = ql.Array(5, 1e-9)
+        upper = ql.Array(5, 1.0)
+        lower[4] = -1.0
+        # constraint = ql.NonhomogeneousBoundaryConstraint(lower, upper)
+        constraint = ql.PositiveConstraint()
+        self.set_date(dates[0])
+        dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
+        # pdb.set_trace()
+        for i, date in enumerate(dates):
+            if (i < skip):
+                if (i + dataLength - 1 >= skip):
+                    self.set_date(date)
+                    dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                    dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                continue
+            if (i + 1 < dataLength):
+                self.set_date(date)
+                dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                continue
+            self.set_date(date)
+            if (dataLength == 1):
+                params = predictive_model.predict(self.values, self._ircurve.values, session, x_pl)
+            else:
+                dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
+                print('\n', i, params, '\n')
+                dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
+                dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
+
+            # self.setupModel(alpha=params[0])
+            if (len(params) == 1):
+                params = [[params[0], 0]]  # shape (1,2)
+            self.model.setParams(ql.Array(params[0]))
+            self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
+            meanErrorAfter, _ = self.__errors()
+            paramsC = self.model.params()
+            sigmas.append(paramsC[1])
+            try:
+                objectiveAfter = self.model.value(self.model.params(), self.helpers)
+            except RuntimeError:
+                objectiveAfter = np.nan
+        return sigmas
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, session=None,
                         x_pl=None, skip=0, fullTest=False):

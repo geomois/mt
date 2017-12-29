@@ -1,6 +1,7 @@
 import tensorflow as tf
 from collections import deque
 import numpy as np
+import dataUtils.customUtils as cu
 import pdb
 
 
@@ -9,7 +10,7 @@ class ConvNet(object):
                  poolingLayerFlag=False, architecture=['c', 'f', 'd'],
                  weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
-                 regularizationStrength=0.001, predictOp=None, pipeline=None):
+                 regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, derive=False):
 
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque([int(i) for i in fcUnits])
@@ -19,7 +20,7 @@ class ConvNet(object):
         self.poolingFlag = poolingLayerFlag
         self.functionDict = {'init': weightInitializer, 'reg': weightRegularizer, 'act': activationFunctions}
         self.functionDictDefault = {'init': weightInitializer, 'reg': weightRegularizer, 'act': activationFunctions}
-        self.predictOp = predictOp
+        self.outOp = predictOp
         self.inChannels = volChannels + irChannels
         self.volChannels = volChannels
         self.irChannels = irChannels
@@ -27,6 +28,9 @@ class ConvNet(object):
         self.architecture = architecture
         self.pipeline = pipeline
         self.calibrationFunc = calibrationFunc
+        self.pipelineList = []
+        self.chainedModel = chainedModel
+        self.derive = derive
 
     def inference(self, x):
         '''
@@ -76,19 +80,6 @@ class ConvNet(object):
                     densecount += 1
         if (self.pipeline is not None):
             layer = self.npToTfFunc(self.pipeline.steps[0][1].inv_func, layer)
-        return layer
-
-    def npToTfFunc(self, func, layer):
-        if (func is not None):
-            if (func is np.exp):
-                layer = tf.exp(layer)
-            elif (func is np.log):
-                layer = tf.log(layer)
-            else:
-                layer = self.pipeline.inverse_transform(layer)
-        else:
-            pass
-
         return layer
 
     def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, activationFunc=tf.nn.relu,
@@ -186,21 +177,79 @@ class ConvNet(object):
     def calibrationLoss(self, date):
         pass
 
-    def predict(self, vol, ir, sess, x_pl):
-        x = np.empty((0, self.volChannels + self.irChannels))
+    def setPipelineList(self, plist):
+        self.pipelineList = plist
+
+    def setCurrentPipeline(self, index):
+        self.pipeline = self.pipelineList[index]
+
+    def _getTransformationFunction(self, transformationType, step):
+        if (self.pipeline.steps[1][1] is not None):
+            if (transformationType.lower() is "transform"):
+                if (step.lower() == 'scale'):
+                    return self.pipeline.steps[1][1].transform
+                else:
+                    return self.pipeline.steps[0][1].func
+            else:
+                if (step.lower() == 'scale'):
+                    return self.pipeline.steps[1][1].inverse_transform
+                else:
+                    return self.pipeline.steps[0][1].func
+        else:
+            raise Exception("No scaler found")
+
+    def npToTfFunc(self, func, inPut):
+        if (func is not None):
+            if (func is np.exp):
+                inPut = tf.exp(inPut)
+            elif (func is np.log):
+                inPut = tf.log(inPut)
+            else:
+                inPut = func(inPut)
+        else:
+            pass
+
+        return inPut
+
+    def applyPipeLine(self, transformationType, x):  # this should be slow, redo
+        if (len(self.pipelineList) != 0):
+            for i in range(x.shape[1]):
+                if (i <= len(self.pipelineList)):
+                    self.setCurrentPipeline(i)
+                    x = self.npToTfFunc(self._getTransformationFunction(transformationType, 'pre'), x)
+                    x[:, i] = self._getTransformationFunction(transformationType, 'scale')(x[:, i])
+        else:
+            pass
+
+        return x
+
+    def predict(self, vol, ir, sess, x_pl, *args):
+        pdb.set_trace()
+        totalDepth = self.volChannels + self.irChannels
+        x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
             x = np.float32(vol[:, :self.volChannels])
         if (self.irChannels > 0):
-            x = np.hstack((x, np.float32(ir[:, :self.irChannels])))
+            if (x.shape[1] != totalDepth):
+                x = np.hstack((x, np.float32(ir[:, :self.irChannels])))
+            else:
+                x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
+
+        if (len(self.pipelineList) > 0):
+            x = self.applyPipeLine('transform', x)
+
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
+        out = sess.run([self.outOp], feed_dict={x_pl: x})
+        if (self.derive):
+            pdb.set_trace()
+            der = cu.transformDerivatives(out[0], 0, totalDepth, x)
+            if (self.chainedModel is not None):
+                self.chainedModel['model'].predict(vol, ir, sess, x_pl, self.chainedModel['placeholder'])
+            out = [np.average(der)]  # just for testing
+        else:
+            out = np.asarray(out).reshape((1, 2))
+            if (self.pipeline is not None):
+                out = self.pipeline.inverse_transform(out)
+            out = out.tolist()
 
-        if (self.pipeline is not None):
-            x = self.npToTfFunc(self.pipeline.steps[0][1].func, x)
-
-        out = sess.run([self.predictOp], feed_dict={x_pl: x})
-
-        pdb.set_trace()
-        out = np.asarray(out).reshape((1, 2))
-        if (self.pipeline is not None):
-            out = self.pipeline.inverse_transform(out)
-        return out.tolist()
+        return out
