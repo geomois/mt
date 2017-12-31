@@ -146,7 +146,8 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
             test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
 
             if (OPTIONS.decay_rate > 0):
-                learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate, global_step=global_step,
+                learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate,
+                                                          global_step=global_step,
                                                           decay_steps=OPTIONS.decay_steps,
                                                           decay_rate=OPTIONS.decay_rate,
                                                           staircase=OPTIONS.decay_staircase)
@@ -154,28 +155,29 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                 learningRate = OPTIONS.learning_rate
 
             optimizer = OPTIMIZER_DICT[OPTIONS.optimizer](learning_rate=learningRate)
-            opt = optimizer.minimize(loss)
+            opt = optimizer.minimize(loss, global_step=global_step)
 
             gradient = None
             if (OPTIONS.with_gradient):
                 # gradient = tf.gradients(loss, x_pl)
                 gradient = tf.gradients(pred, x_pl)
-                # optimizer.compute_gradients()
 
             checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
+            ttS = 0
             for epoch in range(OPTIONS.max_steps):
-                sess.run(global_step.assign(epoch))
+                ttS = os.times().elapsed if epoch % OPTIONS.print_frequency == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
-                # pdb.set_trace()
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                               feed_dict={x_pl: batch_x, y_pl: batch_y})
+
                 if epoch % OPTIONS.print_frequency == 0:
+                    elapsedTime = os.times().elapsed - ttS
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
                     print("====================================================================================")
                     print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
-                          "{:.6f}".format(out))
+                          "{:.6f}".format(out), "Elapsed time: %03f" % elapsedTime)
                 if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
                     if (epoch == OPTIONS.test_frequency and pipeline is not None):
                         if (pipeline.steps[1][1] is not None):  # apply scaler
@@ -194,7 +196,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
 
         tf.reset_default_graph()
     except Exception as ex:
-        pdb.set_trace()
+        # pdb.set_trace()
         print("Exception during training: ", str(ex))
         tf.reset_default_graph()
 
@@ -478,7 +480,7 @@ if __name__ == '__main__':
                         help='Skip n first dates in history comparison')
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
     parser.add_argument('--scaler', type=str, default='minmax', help='Scaler')
-    parser.add_argument('-ds', '--decay_steps', type=int, default=0, help='Decay steps')
+    parser.add_argument('-ds', '--decay_steps', type=int, default=3000, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
     parser.add_argument('--gpu_memory_fraction', type=float, default=GPU_MEMORY_FRACTION,

@@ -224,7 +224,7 @@ class ConvNet(object):
         return x
 
     def predict(self, vol, ir, sess, x_pl, *args):
-        pdb.set_trace()
+        # pdb.set_trace()
         totalDepth = self.volChannels + self.irChannels
         x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
@@ -241,11 +241,15 @@ class ConvNet(object):
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         out = sess.run([self.outOp], feed_dict={x_pl: x})
         if (self.derive):
-            pdb.set_trace()
+            # pdb.set_trace()
             der = cu.transformDerivatives(out[0], 0, totalDepth, x)
             if (self.chainedModel is not None):
                 self.chainedModel['model'].predict(vol, ir, sess, x_pl, self.chainedModel['placeholder'])
-            out = [np.average(der)]  # just for testing
+            # pdb.set_trace()
+            # print(der.shape)
+            out = [der[len(der) - 1, 0]]
+            # out = [np.average(der)]  # just for testing
+            # out = [0.001]
         else:
             out = np.asarray(out).reshape((1, 2))
             if (self.pipeline is not None):

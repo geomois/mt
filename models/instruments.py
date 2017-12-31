@@ -861,7 +861,7 @@ class SwaptionGen(du.TimeSeriesData):
     def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
-        sigmas = []
+        outcome = []
         store.close()
         self.refdate = ql.Date(1, 1, 1901)
         vals = np.zeros((len(df.index), 4))
@@ -898,7 +898,6 @@ class SwaptionGen(du.TimeSeriesData):
                 dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                 dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
-                print('\n', i, params, '\n')
                 dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
@@ -909,12 +908,14 @@ class SwaptionGen(du.TimeSeriesData):
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors()
             paramsC = self.model.params()
-            sigmas.append(paramsC[1])
+            paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
+            outcome.append(paramsC)
+            print('\n', i, paramsC, '\n')
             try:
                 objectiveAfter = self.model.value(self.model.params(), self.helpers)
             except RuntimeError:
                 objectiveAfter = np.nan
-        return sigmas
+        return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, session=None,
                         x_pl=None, skip=0, fullTest=False):
