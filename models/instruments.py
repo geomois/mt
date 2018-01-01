@@ -488,7 +488,11 @@ class SwaptionGen(du.TimeSeriesData):
 
         return avgError
 
-    def __errors(self):
+    def __errors(self, part=None):
+        if (part is not None):
+            # part = [0, len(self.helpers)]
+            # TODO:map ir tenors to helpers' tenors
+            pass
         total_error = 0.0
         with_exception = 0
         errors = np.zeros((1, len(self.helpers)))
@@ -907,168 +911,170 @@ class SwaptionGen(du.TimeSeriesData):
             if (len(params) == 1):
                 params = [[params[0], 0]]  # shape (1,2)
             self.model.setParams(ql.Array(params[0]))
-            self.model.calibrate(self.helpers[part[0]:part[1]], method, end_criteria, constraint, [],
-                                 [True, False])  # keep alpha as is
-            meanErrorAfter, _ = self.__errors()
+            self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
+            meanErrorAfter, _ = self.__errors(part=part)
             paramsC = self.model.params()
             paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
             outcome.append(paramsC)
-            print('\n', i, paramsC, '\n')
+            # print('\n', i, paramsC, '\n')
             try:
                 objectiveAfter = self.model.value(self.model.params(), self.helpers)
             except RuntimeError:
                 objectiveAfter = np.nan
+            print('\n', i, paramsC, objectiveAfter, '\n')
         return outcome
 
-    def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, session=None,
-                        x_pl=None, skip=0, fullTest=False):
-        store = pd.HDFStore(du.h5file)
-        df = store[self.key_model]
-        store.close()
-        self.refdate = ql.Date(1, 1, 1901)
-        vals = np.zeros((len(df.index), 4))
-        values = np.zeros((len(df.index), 13))
-        if dates is None:
-            dates = self._dates
+        def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1,
+                            session=None,
+                            x_pl=None, skip=0, fullTest=False):
+            store = pd.HDFStore(du.h5file)
+            df = store[self.key_model]
+            store.close()
+            self.refdate = ql.Date(1, 1, 1901)
+            vals = np.zeros((len(df.index), 4))
+            values = np.zeros((len(df.index), 13))
+            if dates is None:
+                dates = self._dates
 
-        method = ql.LevenbergMarquardt()
-        end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
-        lower = ql.Array(5, 1e-9)
-        upper = ql.Array(5, 1.0)
-        lower[4] = -1.0
-        # constraint = ql.NonhomogeneousBoundaryConstraint(lower, upper)
-        constraint = ql.PositiveConstraint()
-        self.set_date(dates[0])
-        dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
-        # pdb.set_trace()
-        for i, date in enumerate(dates):
-            if (i < skip):
-                if (i + dataLength - 1 >= skip):
+            method = ql.LevenbergMarquardt()
+            end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
+            lower = ql.Array(5, 1e-9)
+            upper = ql.Array(5, 1.0)
+            lower[4] = -1.0
+            # constraint = ql.NonhomogeneousBoundaryConstraint(lower, upper)
+            constraint = ql.PositiveConstraint()
+            self.set_date(dates[0])
+            dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
+            # pdb.set_trace()
+            for i, date in enumerate(dates):
+                if (i < skip):
+                    if (i + dataLength - 1 >= skip):
+                        self.set_date(date)
+                        dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                        dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                    continue
+                if (i + 1 < dataLength):
                     self.set_date(date)
                     dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                     dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                continue
-            if (i + 1 < dataLength):
+                    continue
+
                 self.set_date(date)
-                dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                continue
-
-            self.set_date(date)
-            if (session is not None):
-                if (dataLength == 1):
-                    params = predictive_model.predict(self.values, self._ircurve.values, session, x_pl)
+                if (session is not None):
+                    if (dataLength == 1):
+                        params = predictive_model.predict(self.values, self._ircurve.values, session, x_pl)
+                    else:
+                        dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                        dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                        params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
+                        print('\n', i, params, '\n')
+                        dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
+                        dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
                 else:
-                    dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                    dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                    params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
-                    print('\n', i, params, '\n')
-                    dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
-                    dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
-            else:
-                params = predictive_model.predict((self.values, self._ircurve.values))
+                    params = predictive_model.predict((self.values, self._ircurve.values))
 
-            if (type(params) == list):
-                self.model.setParams(ql.Array(params[0]))
-            else:
-                self.model.setParams(ql.Array(params.tolist()[0]))
-            meanErrorPrior, _ = self.__errors()
-            try:
-                objectivePrior = self.model.value(self.model.params(), self.helpers)
-            except RuntimeError:
-                objectivePrior = np.nan
-            if (fullTest):
-                self.model.calibrate(self.helpers, method, end_criteria, constraint)
-                meanErrorAfter, _ = self.__errors()
-                paramsC = self.model.params()
+                if (type(params) == list):
+                    self.model.setParams(ql.Array(params[0]))
+                else:
+                    self.model.setParams(ql.Array(params.tolist()[0]))
+                meanErrorPrior, _ = self.__errors()
                 try:
-                    objectiveAfter = self.model.value(self.model.params(), self.helpers)
+                    objectivePrior = self.model.value(self.model.params(), self.helpers)
                 except RuntimeError:
+                    objectivePrior = np.nan
+                if (fullTest):
+                    self.model.calibrate(self.helpers, method, end_criteria, constraint)
+                    meanErrorAfter, _ = self.__errors()
+                    paramsC = self.model.params()
+                    try:
+                        objectiveAfter = self.model.value(self.model.params(), self.helpers)
+                    except RuntimeError:
+                        objectiveAfter = np.nan
+                else:
+                    meanErrorAfter = np.nan
+                    paramsC = np.empty((5))
+                    paramsC[:] = np.nan
                     objectiveAfter = np.nan
-            else:
-                meanErrorAfter = np.nan
-                paramsC = np.empty((5))
-                paramsC[:] = np.nan
-                objectiveAfter = np.nan
-                meanErrorAfter = np.nan
+                    meanErrorAfter = np.nan
 
-            orig_mean_error = df.ix[date, 'OrigMeanError']
-            hist_mean_error = df.ix[date, 'HistMeanError']
-            orig_objective = df.ix[date, 'OrigObjective']
-            hist_objective = df.ix[date, 'HistObjective']
+                orig_mean_error = df.ix[date, 'OrigMeanError']
+                hist_mean_error = df.ix[date, 'HistMeanError']
+                orig_objective = df.ix[date, 'OrigObjective']
+                hist_objective = df.ix[date, 'HistObjective']
 
-            # pdb.set_trace()
-            values[i, 0] = orig_mean_error
-            values[i, 1] = hist_mean_error
-            values[i, 2] = meanErrorPrior
-            values[i, 3] = orig_objective
-            values[i, 4] = hist_objective
-            values[i, 5] = objectivePrior
-            values[i, 6] = meanErrorAfter
-            values[i, 7] = objectiveAfter
-            extensiveFlag = False
-            if orig_objective < hist_objective:
-                values[i, 8] = df.ix[date, 'OrigParam0']
-                values[i, 9] = df.ix[date, 'OrigParam1']
-                if 'OrigParam2' in df.columns:
-                    values[i, 10] = df.ix[date, 'OrigParam2']
-                    values[i, 11] = df.ix[date, 'OrigParam3']
-                    values[i, 12] = df.ix[date, 'OrigParam4']
-                    extensiveFlag = True
-            else:
-                values[i, 8] = df.ix[date, 'HistParam0']
-                values[i, 9] = df.ix[date, 'HistParam1']
-                if 'HistParam2' in df.columns:
-                    values[i, 10] = df.ix[date, 'HistParam2']
-                    values[i, 11] = df.ix[date, 'HistParam3']
-                    values[i, 12] = df.ix[date, 'HistParam4']
-                    extensiveFlag = True
+                # pdb.set_trace()
+                values[i, 0] = orig_mean_error
+                values[i, 1] = hist_mean_error
+                values[i, 2] = meanErrorPrior
+                values[i, 3] = orig_objective
+                values[i, 4] = hist_objective
+                values[i, 5] = objectivePrior
+                values[i, 6] = meanErrorAfter
+                values[i, 7] = objectiveAfter
+                extensiveFlag = False
+                if orig_objective < hist_objective:
+                    values[i, 8] = df.ix[date, 'OrigParam0']
+                    values[i, 9] = df.ix[date, 'OrigParam1']
+                    if 'OrigParam2' in df.columns:
+                        values[i, 10] = df.ix[date, 'OrigParam2']
+                        values[i, 11] = df.ix[date, 'OrigParam3']
+                        values[i, 12] = df.ix[date, 'OrigParam4']
+                        extensiveFlag = True
+                else:
+                    values[i, 8] = df.ix[date, 'HistParam0']
+                    values[i, 9] = df.ix[date, 'HistParam1']
+                    if 'HistParam2' in df.columns:
+                        values[i, 10] = df.ix[date, 'HistParam2']
+                        values[i, 11] = df.ix[date, 'HistParam3']
+                        values[i, 12] = df.ix[date, 'HistParam4']
+                        extensiveFlag = True
 
-            print('Date=%s' % date)
-            print('Vola: Orig=%s Hist=%s ModelPrior=%s ModelAfter=%s' % (
-                orig_mean_error, hist_mean_error, meanErrorPrior, meanErrorAfter))
-            print('NPV:  Orig=%s Hist=%s Model=%s ModelAfter=%s' % (
-                orig_objective, hist_objective, objectivePrior, objectiveAfter))
-            print('Param0: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 8], params[0][0], paramsC[0]))
-            print('Param1: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 9], params[0][1], paramsC[1]))
-            if extensiveFlag:
-                print('Param2: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 10], params[0][2], paramsC[2]))
-                print('Param3: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 11], params[0][3], paramsC[3]))
-                print('Param4: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 12], params[0][4], paramsC[4]))
+                print('Date=%s' % date)
+                print('Vola: Orig=%s Hist=%s ModelPrior=%s ModelAfter=%s' % (
+                    orig_mean_error, hist_mean_error, meanErrorPrior, meanErrorAfter))
+                print('NPV:  Orig=%s Hist=%s Model=%s ModelAfter=%s' % (
+                    orig_objective, hist_objective, objectivePrior, objectiveAfter))
+                print('Param0: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 8], params[0][0], paramsC[0]))
+                print('Param1: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 9], params[0][1], paramsC[1]))
+                if extensiveFlag:
+                    print('Param2: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 10], params[0][2], paramsC[2]))
+                    print('Param3: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 11], params[0][3], paramsC[3]))
+                    print('Param4: Cal:%s , Model:%s, Cal-Mod:%s' % (values[i, 12], params[0][4], paramsC[4]))
 
-            vals[i, 0] = (meanErrorPrior - orig_mean_error) / orig_mean_error * 100.0
-            vals[i, 1] = (meanErrorPrior - hist_mean_error) / hist_mean_error * 100.0
-            vals[i, 2] = (meanErrorAfter - orig_mean_error) / orig_mean_error * 100.0
-            vals[i, 3] = (meanErrorAfter - hist_mean_error) / hist_mean_error * 100.0
+                vals[i, 0] = (meanErrorPrior - orig_mean_error) / orig_mean_error * 100.0
+                vals[i, 1] = (meanErrorPrior - hist_mean_error) / hist_mean_error * 100.0
+                vals[i, 2] = (meanErrorAfter - orig_mean_error) / orig_mean_error * 100.0
+                vals[i, 3] = (meanErrorAfter - hist_mean_error) / hist_mean_error * 100.0
 
-            print('      impO=%s impH=%s impAfterO=%s impAfterH=%s' % (vals[i, 0], vals[i, 1], vals[i, 2], vals[i, 3]))
-        if plot_results:
-            r = range(vals.shape[0])
-            fig = plt.figure(figsize=(16, 16))
-            f1 = fig.add_subplot(211)
-            f1.plot(r, vals[:, 0])
-            f2 = fig.add_subplot(212)
-            f2.plot(r, vals[:, 1])
-            plt.savefig(modelName + '.png')
-        return (dates, values, vals, params)
+                print('      impO=%s impH=%s impAfterO=%s impAfterH=%s' % (
+                    vals[i, 0], vals[i, 1], vals[i, 2], vals[i, 3]))
+            if plot_results:
+                r = range(vals.shape[0])
+                fig = plt.figure(figsize=(16, 16))
+                f1 = fig.add_subplot(211)
+                f1.plot(r, vals[:, 0])
+                f2 = fig.add_subplot(212)
+                f2.plot(r, vals[:, 1])
+                plt.savefig(modelName + '.png')
+            return (dates, values, vals, params)
 
-    def calcForward(self, path=None, futureIncrementInDays=180):
-        fwCurves = pd.DataFrame(columns=["Date", "FutureDate", "Tenor", "Rate"])
-        for date in self._dates:
-            ts = pd.Timestamp(date)
-            refDate = ql.Date(ts.day, ts.month, ts.year)
-            futureDate = refDate + ql.Period(futureIncrementInDays, ql.Days)
-            curve = getImpliedForwardCurve(futureDate, self._ircurve[date])
-            fwRates = []
-            for T in du.irDateInDays:
-                tenor = (T / 365.0) if (T / 365) <= curve.maxTime() else curve.maxTime()
-                refD = pd.to_datetime(ql.Date.to_date(refDate))
-                fD = pd.to_datetime(ql.Date.to_date(futureDate))
-                fwRates.append((refD, fD, T, curve.zeroRate(tenor, ql.Continuous).rate()))
-            fwCurves = fwCurves.append(pd.DataFrame(fwRates, columns=fwCurves.columns.tolist()))
+        def calcForward(self, path=None, futureIncrementInDays=180):
+            fwCurves = pd.DataFrame(columns=["Date", "FutureDate", "Tenor", "Rate"])
+            for date in self._dates:
+                ts = pd.Timestamp(date)
+                refDate = ql.Date(ts.day, ts.month, ts.year)
+                futureDate = refDate + ql.Period(futureIncrementInDays, ql.Days)
+                curve = getImpliedForwardCurve(futureDate, self._ircurve[date])
+                fwRates = []
+                for T in du.irDateInDays:
+                    tenor = (T / 365.0) if (T / 365) <= curve.maxTime() else curve.maxTime()
+                    refD = pd.to_datetime(ql.Date.to_date(refDate))
+                    fD = pd.to_datetime(ql.Date.to_date(futureDate))
+                    fwRates.append((refD, fD, T, curve.zeroRate(tenor, ql.Continuous).rate()))
+                fwCurves = fwCurves.append(pd.DataFrame(fwRates, columns=fwCurves.columns.tolist()))
 
-        if (path is not None):
-            fwCurves.to_csv(path, index=False)
+            if (path is not None):
+                fwCurves.to_csv(path, index=False)
 
 
 class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):
@@ -1197,12 +1203,12 @@ Sampling functions
 
 def random_normal_draw(history, nb_samples, **kwargs):
     """Random normal distributed draws
-    
+
     Arguments:
-        history: numpy 2D array, with history along axis=0 and parameters 
+        history: numpy 2D array, with history along axis=0 and parameters
             along axis=1
         nb_samples: number of samples to draw
-        
+
     Returns:
         numpy 2D array, with samples along axis=0 and parameters along axis=1
     """
@@ -1311,7 +1317,7 @@ g2_local = {'name': 'G2++_local',
 
 
 # g2_vae = {'name' : 'G2++',
-#       'model' : ql.G2, 
+#       'model' : ql.G2,
 #       'engine' : lambda model, _: ql.G2SwaptionEngine(model, 6.0, 16),
 #       'transformation' : g2_transformation,
 #       'inverse_transformation' : g2_inverse_transformation,

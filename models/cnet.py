@@ -248,8 +248,8 @@ class ConvNet(object):
             # pdb.set_trace()
             # print(der.shape)
             # print(der[len(der) - 1, 0], np.average(der))
-            out = [der[len(der) - 1, 0]]
-            # out = [np.average(der)]  # just for testing
+            # out = [der[len(der) - 1, 0]]
+            out = [np.average(der)]
             # out = [0.001]
         else:
             out = np.asarray(out).reshape((1, 2))
