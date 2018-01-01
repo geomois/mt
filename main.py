@@ -139,6 +139,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
     saver = tf.train.Saver()
     try:
         global_step = tf.Variable(0, trainable=False)
+        prevTestLoss = 1
         with tf.Session(config=getTfConfig()) as sess:
             sess.run(tf.global_variables_initializer())
             timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
@@ -164,7 +165,9 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
 
             checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
             ttS = 0
-            for epoch in range(OPTIONS.max_steps):
+            max_steps = OPTIONS.max_steps
+            epoch = 0
+            while epoch < max_steps:
                 ttS = os.times().elapsed if epoch % OPTIONS.print_frequency == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
                 _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
@@ -185,11 +188,16 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                             # testY = pipeline.transform(testY)
                             testX = pipeline.transform(testX)
                     out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
+                    if (out + 0.00001 < prevTestLoss and OPTIONS.extend_training):
+                        if (max_steps - epoch <= OPTIONS.test_frequency):
+                            max_steps += OPTIONS.test_frequency + 1
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
                 if epoch % OPTIONS.checkpoint_freq == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
+                epoch += 1
+
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
@@ -214,13 +222,14 @@ def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True)
 
 
 def importSavedNN(session, modelPath, fileName):
-    saver = tf.train.import_meta_graph(modelPath + "/" + fileName + ".meta", clear_devices=True)
+    saver = tf.train.import_meta_graph(modelPath + fileName + ".meta", clear_devices=True)
     graph = tf.get_default_graph()
     check = tf.train.get_checkpoint_state(modelPath)
     x_pl = graph.get_tensor_by_name("x_pl:0")
     # x_pl = tf.placeholder(tf.float32, shape=(None, 1, 50, 5))
     session.run(tf.global_variables_initializer())
-    saver.restore(session, check.model_checkpoint_path)
+    # saver.restore(session, check.model_checkpoint_path)
+    saver.restore(session, modelPath + fileName)
     return tf.get_collection("predict")[0], x_pl
 
 
@@ -388,8 +397,12 @@ def main(_):
 
                 swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
                 if (OPTIONS.calibrate_sigma):
+                    if (len(OPTIONS.channel_range) > 1):
+                        channelRange = [int(OPTIONS.channel_range[0]), int(OPTIONS.channel_range[1])]
+                    else:
+                        channelRange = [0, int(OPTIONS.channel_range[0])]
                     sigmas = swo.calibrate_sigma(model, modelName, dataLength=OPTIONS.batch_width,
-                                                 session=sess, x_pl=x_pl, skip=OPTIONS.skip)
+                                                 session=sess, x_pl=x_pl, skip=OPTIONS.skip, part=channelRange)
                     folder = OPTIONS.checkpoint_dir + modelName + "/"
                     np.save(folder + "sigmas.npy", sigmas)
                 else:
@@ -505,6 +518,7 @@ if __name__ == '__main__':
                         help='Future reference count of days after initial reference day')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--no_transform', action='store_true', help="Don't transform data with pipeline")
+    parser.add_argument('--extend_training', action='store_true', help="Extend training steps")
 
     OPTIONS, unparsed = parser.parse_known_args()
     predShape = ''

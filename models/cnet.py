@@ -43,8 +43,9 @@ class ConvNet(object):
         flatcount = 0
         densecount = 0
         convcount = 0
+        layer = x
         if (self.pipeline is not None):
-            x = self.npToTfFunc(self.pipeline.steps[0][1].func, x)
+            layer = self.npToTfFunc(self.pipeline.steps[0][1].func, layer)
 
         with tf.variable_scope('ConvNet'):
             for i, l in enumerate(self.architecture):
@@ -52,10 +53,9 @@ class ConvNet(object):
                     with tf.variable_scope('convLayer' + str(convcount)):
                         kernelSize = self.kernels.popleft()
                         depthSize = self.depths.popleft()
-                        if (layer is not None):
-                            pdb.set_trace()
-                            nbChannels = layer.get_shape().as_list()[3]
-                        layer = self._depthWiseConvLayer(x, kernelSize, nbChannels=nbChannels,
+                        # if (layer is not None):
+                        #     nbChannels = layer.get_shape().as_list()[3]
+                        layer = self._depthWiseConvLayer(layer, kernelSize, nbChannels=nbChannels,
                                                          depth=depthSize,
                                                          activationFunc=self._getFunction('act', 'c'),
                                                          initializer=self._getFunction('init', 'c')())
@@ -223,7 +223,7 @@ class ConvNet(object):
 
         return x
 
-    def predict(self, vol, ir, sess, x_pl, *args):
+    def predict(self, vol, ir, sess, x_pl, part, *args):
         # pdb.set_trace()
         totalDepth = self.volChannels + self.irChannels
         x = np.empty((0, totalDepth))
@@ -247,6 +247,7 @@ class ConvNet(object):
                 self.chainedModel['model'].predict(vol, ir, sess, x_pl, self.chainedModel['placeholder'])
             # pdb.set_trace()
             # print(der.shape)
+            # print(der[len(der) - 1, 0], np.average(der))
             out = [der[len(der) - 1, 0]]
             # out = [np.average(der)]  # just for testing
             # out = [0.001]

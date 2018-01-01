@@ -858,11 +858,13 @@ class SwaptionGen(du.TimeSeriesData):
 
         return (objectives.reshape(sh), lim_alpha, lim_beta)
 
-    def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, skip=0):
+    def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, part=None,
+                        skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         outcome = []
         store.close()
+        part = [0, len(self.helpers)] if part == -1 else part
         self.refdate = ql.Date(1, 1, 1901)
         vals = np.zeros((len(df.index), 4))
         values = np.zeros((len(df.index), 13))
@@ -897,7 +899,7 @@ class SwaptionGen(du.TimeSeriesData):
             else:
                 dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                 dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl)
+                params = predictive_model.predict(dataDict['vol'], dataDict['ir'], session, x_pl, part)
                 dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
@@ -905,7 +907,8 @@ class SwaptionGen(du.TimeSeriesData):
             if (len(params) == 1):
                 params = [[params[0], 0]]  # shape (1,2)
             self.model.setParams(ql.Array(params[0]))
-            self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
+            self.model.calibrate(self.helpers[part[0]:part[1]], method, end_criteria, constraint, [],
+                                 [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors()
             paramsC = self.model.params()
             paramsC = np.append(np.asarray(paramsC), meanErrorAfter)

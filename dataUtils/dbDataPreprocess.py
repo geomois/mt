@@ -324,3 +324,21 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
 
     # df[df.someColumn.isin(someList)] #keep data that are also in somelist
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
+
+#Plot errors
+# store = pd.HDFStore('../../../data/data.h5')
+# er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
+# emp = np.load("001sigmas.npy")
+# first = np.load("firstSigmas.npy")
+# long = np.load("sigmas.npy")
+# err = er.as_matrix()
+# errA = []
+# for i in range(err.shape[0]):
+#     errA.append(np.average(np.abs(err[i])))
+# dates = er.index.tolist()
+# ddates = np.asarray(pd.to_datetime(dates[29:]))
+# plt.plot(ddates, errA[29:], label='default QL error')
+# plt.plot(ddates, emp[:, 2], label='0.001 error')
+# plt.plot(ddates, long[:, 2], label='@52.2k error')
+# plt.plot(ddates, first[:, 2], label='@6900k error')
+# plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
