@@ -326,8 +326,8 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
 
 #Plot errors
-# store = pd.HDFStore('../../../data/data.h5')
-# er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
+    # with pd.HDFStore('../../../data/data.h5') as store:
+    #     er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
 # emp = np.load("001sigmas.npy")
 # first = np.load("firstSigmas.npy")
 # long = np.load("sigmas.npy")
