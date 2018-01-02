@@ -148,6 +148,7 @@ class DataHandler(object):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
         if (self.volatilities is None):  # generalize
             self.readData(self.dataFileName)
+        pdb.set_trace()
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth, self.useDataPointers)
             self.segmentWidth = width

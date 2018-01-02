@@ -185,7 +185,7 @@ class ConvNet(object):
 
     def _getTransformationFunction(self, transformationType, step):
         if (self.pipeline.steps[1][1] is not None):
-            if (transformationType.lower() is "transform"):
+            if (transformationType.lower() == "transform"):
                 if (step.lower() == 'scale'):
                     return self.pipeline.steps[1][1].transform
                 else:
@@ -217,14 +217,14 @@ class ConvNet(object):
                 if (i <= len(self.pipelineList)):
                     self.setCurrentPipeline(i)
                     x = self.npToTfFunc(self._getTransformationFunction(transformationType, 'pre'), x)
-                    x[:, i] = self._getTransformationFunction(transformationType, 'scale')(x[:, i])
+                    x[:, i] = self._getTransformationFunction(transformationType, 'scale')(x[:, i].reshape((-1, 1)))[:,
+                              0]
         else:
             pass
 
         return x
 
-    def predict(self, vol, ir, sess, x_pl, part, *args):
-        # pdb.set_trace()
+    def predict(self, vol, ir, sess, x_pl, part=None, *args):
         totalDepth = self.volChannels + self.irChannels
         x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
@@ -248,8 +248,10 @@ class ConvNet(object):
             # pdb.set_trace()
             # print(der.shape)
             # print(der[len(der) - 1, 0], np.average(der))
+            # out = [der[0, 0]]
             # out = [der[len(der) - 1, 0]]
             out = [np.average(der)]
+            # out = [0.025]
             # out = [0.001]
         else:
             out = np.asarray(out).reshape((1, 2))

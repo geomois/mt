@@ -9,6 +9,7 @@ from sklearn.externals import joblib
 import os
 import models.instruments as inst
 import pdb
+import re
 
 
 def toDatetime(d):
@@ -94,6 +95,7 @@ def reshapeMultiple(array, depth, start, end):
             o = np.vstack((o, temp))
     return o
 
+
 def loadSavedScaler(path, identifier=None):
     pklList = []
     for subdir, dirs, files in os.walk(path):
@@ -102,11 +104,13 @@ def loadSavedScaler(path, identifier=None):
                 temp = joblib.load(subdir + "/" + f)
                 if (type(temp) == StandardScaler or type(temp) == MinMaxScaler):
                     transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
-                    pp = pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', temp)])
-                    pklList.append(pp)
+                    pp = Pipeline([('funcTrm', transformFunc), ('scaler', temp)])
+                    index = int(re.findall(r"([0-9][0-9]?)", f)[0])
+                    pklList.append((index, pp))
                 elif (type(temp) == Pipeline):
                     pklList.append(temp)
     if (len(pklList) == 0):
         raise Exception('Empty pipeline folder')
-
+    pklList = sorted(pklList, key=lambda tup: tup[0])
+    pklList = [i[1] for i in pklList]
     return pklList

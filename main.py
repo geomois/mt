@@ -212,7 +212,9 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
 
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
+    pdb.set_trace()
     der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX)
+    pdb.set_trace()
     if (save):
         if (folder is None):
             folder = OPTIONS.checkpoint_dir + modelName + "/"
@@ -389,6 +391,7 @@ def main(_):
                 testX, _ = dh.getTestData()
                 deriv = sess.run(gradient, feed_dict={x_pl: testX})
                 path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
+                pdb.set_trace()
                 transformDerivatives(deriv, dh, testX, path)
             else:
                 if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
