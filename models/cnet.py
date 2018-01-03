@@ -8,7 +8,7 @@ import pdb
 class ConvNet(object):
     def __init__(self, volChannels, irChannels, kernels=[10, 10], depths=[10, 1], poolStrides=[2], fcUnits=[2],
                  poolingLayerFlag=False, architecture=['c', 'f', 'd'],
-                 weightInitializer=[tf.contrib.layers.xavier_initializer], activationFunctions=[tf.nn.relu],
+                 activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
                  regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, derive=False):
 
@@ -30,11 +30,13 @@ class ConvNet(object):
         self.calibrationFunc = calibrationFunc
         self.pipelineList = []
         self.chainedModel = chainedModel
+        self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims']
         self.derive = derive
 
-    def inference(self, x):
+    def inference(self, x, chainedValues=None):
         '''
         :param x: expected shape (depth , signalSize)
+        :param chainedValues: values from chained network
         :return: [alpha, sigma]
         '''
         self.inChannels = x.shape[3].value
@@ -46,8 +48,8 @@ class ConvNet(object):
         layer = x
         if (self.pipeline is not None):
             layer = self.npToTfFunc(self.pipeline.steps[0][1].func, layer)
-
-        with tf.variable_scope('ConvNet'):
+        prefix = '' if self.chainedModel is None else 'chained'
+        with tf.variable_scope(prefix + 'ConvNet'):
             for i, l in enumerate(self.architecture):
                 if (l.lower() == 'c' or l.lower() == "conv"):
                     with tf.variable_scope('convLayer' + str(convcount)):
@@ -62,12 +64,15 @@ class ConvNet(object):
                         maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
                         # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
-                    convcount = 0
+                    convcount += 1
                 elif (l.lower() == 'f' or l.lower() == "flatten"):
                     with tf.variable_scope("flatten" + str(flatcount)):
                         # layer = tf.contrib.layers.flatten(layer)
                         inShape = layer.get_shape().as_list()
                         layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
+                        if (chainedValues is not None):
+                            pdb.set_trace()
+                            layer = tf.concat([layer, chainedValues])
                         tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
                     flatcount += 1
                 elif (l.lower() == 'd' or l.lower() == "dense"):
@@ -224,8 +229,26 @@ class ConvNet(object):
 
         return x
 
+    def derivationProc(self, out, totalDepth, xShape):
+        # pdb.set_trace()
+        # TODO:check out shape
+        der = cu.transformDerivatives(out[0], 0, totalDepth, xShape)
+        # pdb.set_trace()
+        # print(der.shape)
+        # print(der[len(der) - 1, 0], np.average(der))
+        # out = [der[0, 0]]
+        # out = [der[len(der) - 1, 0]]
+        out = [np.average(der)]
+        # out = [0.025]
+        # out = [0.001]
+        return out
+
     def predict(self, vol, ir, sess, x_pl, part=None, *args):
-        totalDepth = self.volChannels + self.irChannels
+        chainedOutput = None
+        if (self.chainedModel is not None):
+            chainedOutput = self.chainedModel['model'].predict(vol, ir, sess, self.chainedModel['placeholder'])
+
+        totalDepth = self.volChannels + self.irChannels + self.chainedChannels
         x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
             x = np.float32(vol[:, :self.volChannels])
@@ -238,21 +261,13 @@ class ConvNet(object):
         if (len(self.pipelineList) > 0):
             x = self.applyPipeLine('transform', x)
 
+        if (self.chainedChannel > 0):
+            x = np.append(chainedOutput[:self.chainedChannel], x)
+
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         out = sess.run([self.outOp], feed_dict={x_pl: x})
         if (self.derive):
-            # pdb.set_trace()
-            der = cu.transformDerivatives(out[0], 0, totalDepth, x)
-            if (self.chainedModel is not None):
-                self.chainedModel['model'].predict(vol, ir, sess, x_pl, self.chainedModel['placeholder'])
-            # pdb.set_trace()
-            # print(der.shape)
-            # print(der[len(der) - 1, 0], np.average(der))
-            # out = [der[0, 0]]
-            # out = [der[len(der) - 1, 0]]
-            out = [np.average(der)]
-            # out = [0.025]
-            # out = [0.001]
+            out = self.derivationProc(out, totalDepth, x.shape)
         else:
             out = np.asarray(out).reshape((1, 2))
             if (self.pipeline is not None):

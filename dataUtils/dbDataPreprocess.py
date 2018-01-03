@@ -326,8 +326,13 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
 
 #Plot errors
-    # with pd.HDFStore('../../../data/data.h5') as store:
-    #     er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
+# import numpy as np
+# import matplotlib.pyplot as plt
+# import pandas as pd
+# ind=0
+# with pd.HDFStore('../../../data/data.h5') as store:
+#     er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
+#     params = store['/Models/IR/SWO/GBP/Hull_White_analytic_formulae']
 # emp = np.load("001sigmas.npy")
 # first = np.load("firstSigmas.npy")
 # long = np.load("sigmas.npy")
@@ -338,7 +343,7 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
 # dates = er.index.tolist()
 # ddates = np.asarray(pd.to_datetime(dates[29:]))
 # plt.plot(ddates, errA[29:], label='default QL error')
-# plt.plot(ddates, emp[:, 2], label='0.001 error')
-# plt.plot(ddates, long[:, 2], label='@52.2k error')
-# plt.plot(ddates, first[:, 2], label='@6900k error')
+# plt.plot(ddates, emp[:, ind], label='0.001 error')
+# plt.plot(ddates, long[:, ind], label='@52.2k error')
+# plt.plot(ddates, first[:, ind], label='@6900k error')
 # plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))

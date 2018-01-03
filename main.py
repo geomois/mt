@@ -1,13 +1,10 @@
-import argparse
-import os
+import argparse, os, time, pdb
 import tensorflow as tf
 import numpy as np
 from models.cnet import ConvNet
 import models.instruments as inst
 from dataUtils.dataHandler import DataHandler
-import pdb
 import datetime as dt
-import re
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
@@ -96,7 +93,7 @@ def trainLSTM(dataHandler):
         dnn_hidden_units = []
 
 
-def buildCnn(dataHandler, swaptionGen=None):
+def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     testX, testY = dataHandler.getTestData()
     print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
     if (int(OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1]) != testY.shape[1]):
@@ -108,9 +105,11 @@ def buildCnn(dataHandler, swaptionGen=None):
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
-    # if (OPTIONS.pipeline is not ""):
-    #     # pipeline = dataHandler.fitPipeline(getPipeLine())
-    #     pipeline = getPipeLine()
+
+    chained_pl = None
+    if (chainedModel is not None):
+        chained_pl = tf.placeholder(tf.float32, shape=chainedModel['output_dims'])
+        chainedModel['placeholder'] = chained_pl
 
     if (OPTIONS.use_pipeline):
         pipeline = dataHandler.initializePipeline(getPipeLine())
@@ -121,60 +120,90 @@ def buildCnn(dataHandler, swaptionGen=None):
         pass
     cnn = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, poolingLayerFlag=poolingFlag,
                   architecture=OPTIONS.architecture, fcUnits=OPTIONS.fullyConnectedNodes, pipeline=pipeline,
-                  activationFunctions=activation,
+                  activationFunctions=activation, chainedModel=chainedModel,
                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
-    pred = cnn.inference(x_pl)
+
+    pred = cnn.inference(x_pl, chained_pl)
     tf.add_to_collection("predict", pred)
     if (OPTIONS.use_calibration_loss):
-        y_pl = tf.placeholder(tf.int32, shape=(None, testY.shape[1]), name="y_pl")
         loss = cnn.calibrationLoss(pred)
     else:
         loss = cnn.loss(pred, y_pl)
 
-    return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline
+    return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
 
 
-def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
+def setupChainedModel(sess, chainedModel):
+    dh = setupDataHandler(chainedModel['options'])
+    gradFlag = chainedModel['options'].with_gradient
+    model, operation, x_pl, gradientOp = setupNetwork(sess, chainedModel['options'], gradientFlag=gradFlag)
+    chainedModel['model'] = model
+    if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):  # keep OPTIONS not chainedModel['options']
+        pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
+        model.setPipelineList(pipelineList)
+
+    return dh, operation, x_pl, model
+
+
+def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None, pipeline=None):
+    # With chained models use already transformed data to avoid some complexity
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     try:
         global_step = tf.Variable(0, trainable=False)
         prevTestLoss = 1
+        checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
+        timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
+        if (OPTIONS.decay_rate > 0):
+            learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate,
+                                                      global_step=global_step,
+                                                      decay_steps=OPTIONS.decay_steps,
+                                                      decay_rate=OPTIONS.decay_rate,
+                                                      staircase=OPTIONS.decay_staircase)
+        else:
+            learningRate = OPTIONS.learning_rate
+
+        optimizer = OPTIMIZER_DICT[OPTIONS.optimizer](learning_rate=learningRate)
+        opt = optimizer.minimize(loss, global_step=global_step)
+
+        gradient = None
+        if (OPTIONS.with_gradient):
+            gradient = tf.gradients(pred, x_pl)
+
         with tf.Session(config=getTfConfig()) as sess:
+            chained_pl = chainedOp = chainedDH = interChained_pl = None  # prevent IDE from being annoying
+            if (chainedModel is not None):
+                chainedDH, chainedOp, interChained_pl, cModel = setupChainedModel(sess, chainedModel)
+                chained_pl = chainedModel['placeholder']
+                assert dataHandler.dataFileName == chainedDH.dataFileName, "The chained models MUST use the same data source"
+                assert dataHandler.sliding == chainedDH.sliding, "The chained models MUST use same sliders"
+                assert dataHandler.randomSpliting == False and chainedDH.randomSpliting == False, "No random splitting"
+                assert dataHandler.testDataPercentage == chainedDH.testDataPercentage, "Same test percentage"
+
             sess.run(tf.global_variables_initializer())
-            timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
             train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
 
-            if (OPTIONS.decay_rate > 0):
-                learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate,
-                                                          global_step=global_step,
-                                                          decay_steps=OPTIONS.decay_steps,
-                                                          decay_rate=OPTIONS.decay_rate,
-                                                          staircase=OPTIONS.decay_staircase)
-            else:
-                learningRate = OPTIONS.learning_rate
-
-            optimizer = OPTIMIZER_DICT[OPTIONS.optimizer](learning_rate=learningRate)
-            opt = optimizer.minimize(loss, global_step=global_step)
-
-            gradient = None
-            if (OPTIONS.with_gradient):
-                # gradient = tf.gradients(loss, x_pl)
-                gradient = tf.gradients(pred, x_pl)
-
-            checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
             ttS = 0
             max_steps = OPTIONS.max_steps
             epoch = 0
             while epoch < max_steps:
-                ttS = os.times().elapsed if epoch % OPTIONS.print_frequency == 1 else ttS
+                ttS = time.time() if epoch % OPTIONS.print_frequency == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
-                _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
-                                              feed_dict={x_pl: batch_x, y_pl: batch_y})
+
+                if (chainedModel is not None):
+                    cbatch_x = chainedDH.getNextBatch()
+                    pdb.set_trace()
+                    cOut = sess.run([chainedOp], feed_dict={interChained_pl: cbatch_x})
+                    chainedInput = cModel.derivationProc(cOut, cModel.irChannels + cModel.volChannels, cbatch_x.shape)
+                    _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
+                                                  feed_dict={x_pl: batch_x, y_pl: batch_y, chained_pl: chainedInput})
+                else:
+                    _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
+                                                  feed_dict={x_pl: batch_x, y_pl: batch_y})
 
                 if epoch % OPTIONS.print_frequency == 0:
-                    elapsedTime = os.times().elapsed - ttS
+                    elapsedTime = time.time() - ttS
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
@@ -187,7 +216,17 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                             print("Transforming test")
                             # testY = pipeline.transform(testY)
                             testX = pipeline.transform(testX)
-                    out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
+
+                    if (chainedModel is not None):
+                        ctest_x = chainedDH.getTestData()
+                        cOut = sess.run([chainedOp], feed_dict={interChained_pl: cbatch_x})
+                        chainedInput = cModel.derivationProc(cOut, cModel.irChannels + cModel.volChannels,
+                                                             cbatch_x.shape)
+                        out, merged_sum = sess.run([loss, mergedSummaries],
+                                                   feed_dict={x_pl: testX, y_pl: testY, chained_pl: chainedInput})
+                    else:
+                        out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
+
                     if (out + 0.00001 < prevTestLoss and OPTIONS.extend_training):
                         if (max_steps - epoch <= OPTIONS.test_frequency):
                             max_steps += OPTIONS.test_frequency + 1
@@ -202,6 +241,10 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
+        opts = get_options(False, modelDir=checkpointFolder)
+        opts["output_dims"] = (None, 1, testX.shape[2], testX.shape[3])
+        opts["input_dims"] = (None, testY.shape[1])
+        cu.save_obj(opts, checkpointFolder + 'options.pkl')
         tf.reset_default_graph()
     except Exception as ex:
         # pdb.set_trace()
@@ -235,36 +278,46 @@ def importSavedNN(session, modelPath, fileName):
     return tf.get_collection("predict")[0], x_pl
 
 
-def setupDataHandler():
-    if (OPTIONS.predictiveShape is not None):
-        if (OPTIONS.volFileName is not None):
+def setupDataHandler(options):
+    if (type(options) == argparse.Namespace):
+        options = vars(options)
+    if (options['predictiveShape'] is not None):
+        if (options['volFileName'] is not None):
             mode = 'vol'
-        elif (OPTIONS.irFileName is not None):
+        elif (options['irFileName'] is not None):
             mode = 'ir'
         else:
             raise ValueError('File name is not correct')
-        predShape = (mode, OPTIONS.predictiveShape, OPTIONS.channel_range)
-        specialFilePrefix = "_M" + mode + ''.join(OPTIONS.predictiveShape)
+        predictiveShape = (mode, options['predictiveShape'], options['channel_range'])
+        specialFilePrefix = "_M" + mode + ''.join(options['predictiveShape'])
     else:
-        predShape = None
+        predictiveShape = None
         specialFilePrefix = ''
 
-    dataFileName = OPTIONS.volFileName if OPTIONS.volFileName is not None else OPTIONS.irFileName
-    dataHandler = DataHandler(dataFileName=dataFileName, batchSize=OPTIONS.batch_size, width=OPTIONS.batch_width,
-                              volDepth=int(OPTIONS.data_vol_depth), irDepth=int(OPTIONS.data_ir_depth),
-                              useDataPointers=OPTIONS.use_calibration_loss, save=OPTIONS.saveProcessedData,
-                              specialFilePrefix=specialFilePrefix, predictiveShape=predShape,
-                              targetDataMode=OPTIONS.target)
-    if (OPTIONS.processedData):
+    dataFileName = options['volFileName'] if options['volFileName'] is not None else options['irFileName']
+    dataHandler = DataHandler(dataFileName=dataFileName, batchSize=options['batch_size'], width=options['batch_width'],
+                              volDepth=int(options['data_vol_depth']), irDepth=int(options['data_ir_depth']),
+                              useDataPointers=options['use_calibration_loss'], save=options['saveProcessedData'],
+                              specialFilePrefix=specialFilePrefix, predictiveShape=predictiveShape,
+                              targetDataMode=options['target'])
+    if (options['processedData']):
         fileList = dataHandler.findTwinFiles(dataFileName)
         dataHandler.delegateDataDictsFromFile(fileList)
 
     return dataHandler
 
 
-def print_flags():
+def get_options(printFlag=True, modelDir=None):
+    options = vars(OPTIONS)
     for key, value in vars(OPTIONS).items():
-        print(key + ' : ' + str(value))
+        if (key == 'model_dir' and modelDir is not None):
+            value = modelDir
+            options[key] = modelDir
+        item = key + ' : ' + str(value)
+        # array.append((key, value))
+        if (printFlag):
+            print(item)
+    return options
 
 
 def initDirectories():
@@ -315,9 +368,10 @@ def getTfConfig():
     return config
 
 
-def setupNetwork(session, gradientFlag=False):
-    fileName = ''.join(re.findall(r'(/)(\w+)', OPTIONS.model_dir).pop())
-    directory = OPTIONS.model_dir.split(fileName)[0]
+def setupNetwork(session, options, gradientFlag=False):
+    if (type(options) == argparse.Namespace):
+        options = vars(options)
+    fileName, directory = cu.splitFileName(options['model_dir'])
     predictOp, x_pl = importSavedNN(session, directory, fileName)
     gradientOp = None
     operation = predictOp
@@ -325,20 +379,20 @@ def setupNetwork(session, gradientFlag=False):
         gradientOp = tf.gradients(predictOp, x_pl)
         operation = gradientOp
     pipeline = None
-    if (OPTIONS.use_pipeline):
+    if (options['use_pipeline']):
         try:
-            if (OPTIONS.pipeline is not ""):
-                pipelinePath = OPTIONS.pipeline
+            if (options['pipeline'] is not ""):
+                pipelinePath = options['pipeline']
             else:
-                pipelinePath = OPTIONS.checkpoint_dir + '/' + modelName + "/pipeline.pkl"
+                pipelinePath = options['checkpoint_dir'] + '/' + modelName + "/pipeline.pkl"
             pipeline = getPipeLine(pipelinePath)
         except:
             pass
-
-    if (OPTIONS.nn_model.lower() == 'cnn'):
-        model = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth,
+    model = None
+    if (options['nn_model'].lower() == 'cnn'):
+        model = ConvNet(volChannels=options['conv_vol_depth'], irChannels=options['conv_ir_depth'],
                         predictOp=operation, pipeline=pipeline, derive=gradientFlag)
-    elif (OPTIONS.nn_model.lower() == 'lstm'):
+    elif (options['nn_model'].lower() == 'lstm'):
         # model = LSTM(predictOp = predictOp)
         pass
     return model, predictOp, x_pl, gradientOp
@@ -352,8 +406,22 @@ def savePipeline(pipeline):
         joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
 
 
+def buildModelName(ps, cr, cm, suff, nn, arch, bw, cvd, cid):
+    predShape = ''
+    if (ps is not None):
+        cR = '_'.join(cr) if type(cr) == list else str(cr)
+        predShape = str('Ps' + '_'.join(ps) + '_' + cR + '_')
+    if (cm is not None):
+        preSuffix = 'chained_'
+    else:
+        preSuffix = ""
+    mN = preSuffix + suff + predShape + nn + "_A" + ''.join(arch) + "_w" + str(bw) + "_v" + str(cvd) + "_ir" + str(cid)
+
+    return mN
+
+
 def main(_):
-    print_flags()
+    _ = get_options()
     initDirectories()
     swo = None
     if (OPTIONS.weight_reg_strength is None):
@@ -373,10 +441,20 @@ def main(_):
                 print("File already exists")
 
     if OPTIONS.is_train:
-        dh = setupDataHandler()
+        dh = setupDataHandler(OPTIONS)
         if OPTIONS.nn_model == 'cnn':
-            dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline = buildCnn(dh, swaptionGen=swo)
-            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline)
+            if (OPTIONS.chained_model is not None):
+                fileName, directory = cu.splitFileName(OPTIONS.chained_model)
+                chainedOptions = cu.load_obj(directory + '/options.pkl')
+                chained = {"output_dims": chainedOptions['output_dims'], 'options': chainedOptions, 'model': None,
+                           'placeholder': None}
+            else:
+                chained = None
+
+            dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
+                                                                                        chainedModel=chained)
+            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=pipeline,
+                               chainedModel=cnn.chainedModel)
             savePipeline(pipeline)
         elif OPTIONS.nn_model == 'lstm':
             trainLSTM(dh)
@@ -385,13 +463,12 @@ def main(_):
 
     if OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
-            model, predictOp, x_pl, gradient = setupNetwork(sess, gradientFlag=True)
+            model, predictOp, x_pl, gradient = setupNetwork(sess, options=OPTIONS, gradientFlag=True)
             if OPTIONS.with_gradient:
-                dh = setupDataHandler()
+                dh = setupDataHandler(OPTIONS)
                 testX, _ = dh.getTestData()
                 deriv = sess.run(gradient, feed_dict={x_pl: testX})
                 path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
-                pdb.set_trace()
                 transformDerivatives(deriv, dh, testX, path)
             else:
                 if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
@@ -415,7 +492,7 @@ def main(_):
 
     if OPTIONS.compare and not OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
-            model, predictOp, x_pl, _ = setupNetwork(sess)
+            model, predictOp, x_pl, _ = setupNetwork(sess, OPTIONS)
             swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
             _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
                                                           session=sess, x_pl=x_pl, skip=OPTIONS.skip,
@@ -522,13 +599,13 @@ if __name__ == '__main__':
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--no_transform', action='store_true', help="Don't transform data with pipeline")
     parser.add_argument('--extend_training', action='store_true', help="Extend training steps")
+    parser.add_argument('-chain', '--chained_model', type=str, default=None,
+                        help="Loads model defined in file and chains it with the current nn model")
 
     OPTIONS, unparsed = parser.parse_known_args()
-    predShape = ''
-    if (OPTIONS.predictiveShape is not None):
-        cR = '_'.join(OPTIONS.channel_range) if type(OPTIONS.channel_range) == list else str(OPTIONS.channel_range)
-        predShape = str('Ps' + '_'.join(OPTIONS.predictiveShape) + '_' + cR + '_')
-
-    modelName = OPTIONS.suffix + predShape + OPTIONS.nn_model + "_A" + ''.join(OPTIONS.architecture) + "_w" + str(
-        OPTIONS.batch_width) + "_v" + str(OPTIONS.conv_vol_depth) + "_ir" + str(OPTIONS.conv_ir_depth)
+    modelName = buildModelName(ps=OPTIONS.predictiveShape, cr=OPTIONS.channel_range, cm=OPTIONS.chained_model,
+                               suff=OPTIONS.suffix,
+                               nn=OPTIONS.nn_model, arch=OPTIONS.architecture, bw=OPTIONS.batch_width,
+                               cvd=OPTIONS.conv_vol_depth,
+                               cid=OPTIONS.conv_ir_depth)
     tf.app.run()

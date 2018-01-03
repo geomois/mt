@@ -9,7 +9,19 @@ from sklearn.externals import joblib
 import os
 import models.instruments as inst
 import pdb
-import re
+import re, pickle
+
+optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency", "gpu_memory_fraction", "suffix",
+              "decay_steps", "weight_reg_strength", "irFileName", "model_dir", "historyStart", "test_frequency",
+              "channel_range", "learning_rate", "batch_width", "conv_ir_depth", "batch_size", "fullyConnectedNodes",
+              "model", "activation", "extend_training", "use_pipeline", "skip", "weight_reg", "weight_init_scale",
+              "conv_vol_depth", "futureIncrement", "use_cpu", "with_gradient", "target", "volFileName", "chained_model",
+              "data_ir_depth", "processedData", "data_dir", "scaler", "exportForwardRates", "log_dir",
+              "predictiveShape", "max_steps", "full_test", "compare", "dnn_hidden_units", "data_vol_depth",
+              "historyEnd", "print_frequency", "checkpoint_freq", "nn_model", "checkpoint_dir", "paramsFileName",
+              "optimizer", "is_train", "pipeline", "calculate_gradient", "no_transform", "decay_rate",
+              "saveProcessedData", "calibrate_sigma", "irType", "calibrate", "weight_init", "decay_staircase",
+              "outDims", "input_dims", "output_dims"]
 
 
 def toDatetime(d):
@@ -68,13 +80,13 @@ def getImpliedForwardCurve(futureDate, curve):
     return impliedCurve
 
 
-def transformDerivatives(derivative, channelStart, channelEnd, testX):
+def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     derivative = np.asarray(derivative[0])
     step = channelEnd - channelStart
-    if (testX.shape[3] is not 1):
-        derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, testX.shape[2]))
+    if (xShape[3] is not 1):
+        derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
     else:
-        derivative = derivative.reshape((-1, testX.shape[2]))
+        derivative = derivative.reshape((-1, xShape[2]))
 
     datapoints = int(derivative.shape[0] / step)
     der = np.empty((0, datapoints))
@@ -114,3 +126,18 @@ def loadSavedScaler(path, identifier=None):
     pklList = sorted(pklList, key=lambda tup: tup[0])
     pklList = [i[1] for i in pklList]
     return pklList
+
+def splitFileName(path):
+    fileName = ''.join(re.findall(r'(/)(\w+)', path).pop())
+    directory = path.split(fileName)[0]
+    return fileName, directory
+
+
+def save_obj(obj, name):
+    with open(name, 'wb+') as f:
+        pickle.dump(obj, f)
+
+
+def load_obj(name):
+    with open(name, 'rb') as f:
+        return pickle.load(f)
