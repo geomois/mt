@@ -1,7 +1,7 @@
 import tensorflow as tf
 from collections import deque
 import numpy as np
-import dataUtils.customUtils as cu
+import utils.customUtils as cu
 import pdb
 
 
@@ -72,7 +72,7 @@ class ConvNet(object):
                         layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
                         if (chainedValues is not None):
                             pdb.set_trace()
-                            layer = tf.concat([layer, chainedValues])
+                            layer = tf.concat([layer, chainedValues], axis=1)
                         tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
                     flatcount += 1
                 elif (l.lower() == 'd' or l.lower() == "dense"):
@@ -230,25 +230,26 @@ class ConvNet(object):
         return x
 
     def derivationProc(self, out, totalDepth, xShape):
-        # pdb.set_trace()
-        # TODO:check out shape
-        der = cu.transformDerivatives(out[0], 0, totalDepth, xShape)
-        # pdb.set_trace()
+        der = cu.transformDerivatives(out, 0, totalDepth, xShape)
+        if(der.shape[1]>1):
+            out=np.average(der,axis=0).reshape((-1,1))
+        else:
+            out = np.average(der).reshape((-1,1))
         # print(der.shape)
         # print(der[len(der) - 1, 0], np.average(der))
         # out = [der[0, 0]]
         # out = [der[len(der) - 1, 0]]
-        out = [np.average(der)]
+
         # out = [0.025]
         # out = [0.001]
         return out
 
-    def predict(self, vol, ir, sess, x_pl, part=None, *args):
+    def predict(self, vol, ir, sess, x_pl, *args):
         chainedOutput = None
         if (self.chainedModel is not None):
-            chainedOutput = self.chainedModel['model'].predict(vol, ir, sess, self.chainedModel['placeholder'])
+            chainedOutput = self.chainedModel['model'].predict(vol, ir)
 
-        totalDepth = self.volChannels + self.irChannels + self.chainedChannels
+        totalDepth = self.volChannels + self.irChannels + self.chainedChannel
         x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
             x = np.float32(vol[:, :self.volChannels])
@@ -267,7 +268,7 @@ class ConvNet(object):
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         out = sess.run([self.outOp], feed_dict={x_pl: x})
         if (self.derive):
-            out = self.derivationProc(out, totalDepth, x.shape)
+            out = self.derivationProc(out[0], totalDepth, x.shape)
         else:
             out = np.asarray(out).reshape((1, 2))
             if (self.pipeline is not None):

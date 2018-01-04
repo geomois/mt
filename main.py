@@ -1,14 +1,16 @@
-import argparse, os, time, pdb
+import argparse, os, time, pdb, sys
 import tensorflow as tf
 import numpy as np
+from graphHandler import GraphHandler
 from models.cnet import ConvNet
 import models.instruments as inst
-from dataUtils.dataHandler import DataHandler
+from utils.ahUtils import *
+from utils.dataHandler import DataHandler
 import datetime as dt
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
-import dataUtils.customUtils as cu
+import utils.customUtils as cu
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -71,10 +73,9 @@ OPTIMIZER_DICT = {'sgd': tf.train.GradientDescentOptimizer,  # Gradient Descent
                   'adam': tf.train.AdamOptimizer,  # Adam
                   'rmsprop': tf.train.RMSPropOptimizer}  # RMSprop
 
-IR_MODEL = {'hullwhite': inst.hullwhite_analytic,
-            'g2': inst.g2,
-            'g2_local': inst.g2_local
-            }
+IR_MODEL = {'hullwhite': hullwhite_analytic,
+            'g2': g2,
+            'g2_local': g2_local}
 # endregion optionDictionaries
 
 OPTIONS = None
@@ -95,24 +96,27 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     testX, testY = dataHandler.getTestData()
+    chained_pl = None
+    if (chainedModel is not None):
+        chained_pl = tf.placeholder(tf.float32, shape=chainedModel['output_dims'])
+        chainedModel['placeholder'] = chained_pl
+        prefix = 'chained'
+    else:
+        prefix = ''
     print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
     if (int(OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
         print("Aligning...")
         OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1] = testY.shape[1]
     print("Output dims" + str((None, testY.shape[1])))
-    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
-    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
+    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name=prefix + "x_pl")
+    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name=prefix + "y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
 
-    chained_pl = None
-    if (chainedModel is not None):
-        chained_pl = tf.placeholder(tf.float32, shape=chainedModel['output_dims'])
-        chainedModel['placeholder'] = chained_pl
-
     if (OPTIONS.use_pipeline):
-        pipeline = dataHandler.initializePipeline(getPipeLine())
+        # pipeline = dataHandler.initializePipeline(getPipeLine())
+        pipeline = getPipeLine()
     try:
         activation = [ACTIVATION_DICT[act] for act in OPTIONS.activation]
     except:
@@ -131,18 +135,6 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
         loss = cnn.loss(pred, y_pl)
 
     return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
-
-
-def setupChainedModel(sess, chainedModel):
-    dh = setupDataHandler(chainedModel['options'])
-    gradFlag = chainedModel['options'].with_gradient
-    model, operation, x_pl, gradientOp = setupNetwork(sess, chainedModel['options'], gradientFlag=gradFlag)
-    chainedModel['model'] = model
-    if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):  # keep OPTIONS not chainedModel['options']
-        pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
-        model.setPipelineList(pipelineList)
-
-    return dh, operation, x_pl, model
 
 
 def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None, pipeline=None):
@@ -171,11 +163,11 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
             gradient = tf.gradients(pred, x_pl)
 
         with tf.Session(config=getTfConfig()) as sess:
-            chained_pl = chainedOp = chainedDH = interChained_pl = None  # prevent IDE from being annoying
+            chained_pl = chainedDH = None  # prevent IDE from being annoying
             if (chainedModel is not None):
-                chainedDH, chainedOp, interChained_pl, cModel = setupChainedModel(sess, chainedModel)
+                chainedDH, gh = setupChainedModel(chainedModel)
                 chained_pl = chainedModel['placeholder']
-                assert dataHandler.dataFileName == chainedDH.dataFileName, "The chained models MUST use the same data source"
+                # assert dataHandler.dataFileName == chainedDH.dataFileName, "The chained models MUST use the same data source"
                 assert dataHandler.sliding == chainedDH.sliding, "The chained models MUST use same sliders"
                 assert dataHandler.randomSpliting == False and chainedDH.randomSpliting == False, "No random splitting"
                 assert dataHandler.testDataPercentage == chainedDH.testDataPercentage, "Same test percentage"
@@ -192,16 +184,15 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
 
                 if (chainedModel is not None):
-                    cbatch_x = chainedDH.getNextBatch()
-                    pdb.set_trace()
-                    cOut = sess.run([chainedOp], feed_dict={interChained_pl: cbatch_x})
-                    chainedInput = cModel.derivationProc(cOut, cModel.irChannels + cModel.volChannels, cbatch_x.shape)
+                    chained_train_x, _ = chainedDH.getNextBatch()
+                    cOut = gh.run(op=gh.gradientOp, data=chained_train_x)
+                    chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
+                                                           chained_train_x.shape)
                     _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                                   feed_dict={x_pl: batch_x, y_pl: batch_y, chained_pl: chainedInput})
                 else:
                     _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                                   feed_dict={x_pl: batch_x, y_pl: batch_y})
-
                 if epoch % OPTIONS.print_frequency == 0:
                     elapsedTime = time.time() - ttS
                     train_writer.add_summary(merged_sum, epoch)
@@ -212,16 +203,16 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                           "{:.6f}".format(out), "Elapsed time: %03f" % elapsedTime)
                 if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
                     if (epoch == OPTIONS.test_frequency and pipeline is not None):
-                        if (pipeline.steps[1][1] is not None):  # apply scaler
+                        if (pipeline.steps[1][1] is not None):
                             print("Transforming test")
-                            # testY = pipeline.transform(testY)
-                            testX = pipeline.transform(testX)
+                            testY = pipeline.transform(testY)
+                            # testX = pipeline.transform(testX)
 
                     if (chainedModel is not None):
-                        ctest_x = chainedDH.getTestData()
-                        cOut = sess.run([chainedOp], feed_dict={interChained_pl: cbatch_x})
-                        chainedInput = cModel.derivationProc(cOut, cModel.irChannels + cModel.volChannels,
-                                                             cbatch_x.shape)
+                        chained_test_x, _ = chainedDH.getTestData()
+                        cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
+                        chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
+                                                               chained_test_x.shape)
                         out, merged_sum = sess.run([loss, mergedSummaries],
                                                    feed_dict={x_pl: testX, y_pl: testY, chained_pl: chainedInput})
                     else:
@@ -241,17 +232,34 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
-        opts = get_options(False, modelDir=checkpointFolder)
-        opts["output_dims"] = (None, 1, testX.shape[2], testX.shape[3])
-        opts["input_dims"] = (None, testY.shape[1])
+        opts = get_options(False, modelDir=checkpointFolder + '/' + str(OPTIONS.max_steps))
+        opts["input_dims"] = (None, 1, testX.shape[2], testX.shape[3])
+        if (gradient is not None):
+            opts["output_dims"] = (None, 1)
+        else:
+            opts["output_dims"] = (None, testY.shape[1])
         cu.save_obj(opts, checkpointFolder + 'options.pkl')
         tf.reset_default_graph()
     except Exception as ex:
         # pdb.set_trace()
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print(exc_type, fname, exc_tb.tb_lineno)
         print("Exception during training: ", str(ex))
         tf.reset_default_graph()
 
     return pipeline
+
+
+def setupChainedModel(chainedModel):
+    dh = setupDataHandler(chainedModel['options'], allowPredictiveTransformation=False)
+    gradFlag = chainedModel['options']['with_gradient']
+    gh = setupNetwork(chainedModel['options'], gradientFlag=gradFlag)
+    if (OPTIONS.chained_pipeline is not None):  # keep OPTIONS not chainedModel['options']
+        pipelineList = cu.loadSavedScaler(OPTIONS.chained_pipeline)
+        gh.model.setPipelineList(pipelineList)
+    chainedModel['model'] = gh
+    return dh, gh
 
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
@@ -266,22 +274,11 @@ def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True)
     return der
 
 
-def importSavedNN(session, modelPath, fileName):
-    saver = tf.train.import_meta_graph(modelPath + fileName + ".meta", clear_devices=True)
-    graph = tf.get_default_graph()
-    check = tf.train.get_checkpoint_state(modelPath)
-    x_pl = graph.get_tensor_by_name("x_pl:0")
-    # x_pl = tf.placeholder(tf.float32, shape=(None, 1, 50, 5))
-    session.run(tf.global_variables_initializer())
-    # saver.restore(session, check.model_checkpoint_path)
-    saver.restore(session, modelPath + fileName)
-    return tf.get_collection("predict")[0], x_pl
-
-
-def setupDataHandler(options):
+def setupDataHandler(options, allowPredictiveTransformation=True):
+    # to avoid cutting the data for training set allowPredictiveTransformation False (e.g. chained model)
     if (type(options) == argparse.Namespace):
         options = vars(options)
-    if (options['predictiveShape'] is not None):
+    if (options['predictiveShape'] is not None and allowPredictiveTransformation):
         if (options['volFileName'] is not None):
             mode = 'vol'
         elif (options['irFileName'] is not None):
@@ -368,16 +365,17 @@ def getTfConfig():
     return config
 
 
-def setupNetwork(session, options, gradientFlag=False):
+def setupNetwork(options, gradientFlag=False):
+    """
+    :param options:
+    :param gradientFlag:
+    :return: GraphHandler
+    """
     if (type(options) == argparse.Namespace):
         options = vars(options)
     fileName, directory = cu.splitFileName(options['model_dir'])
-    predictOp, x_pl = importSavedNN(session, directory, fileName)
-    gradientOp = None
-    operation = predictOp
-    if (gradientFlag):
-        gradientOp = tf.gradients(predictOp, x_pl)
-        operation = gradientOp
+    gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig())
+    gh.importSavedNN(fileName, gradientFlag=gradientFlag)
     pipeline = None
     if (options['use_pipeline']):
         try:
@@ -388,14 +386,8 @@ def setupNetwork(session, options, gradientFlag=False):
             pipeline = getPipeLine(pipelinePath)
         except:
             pass
-    model = None
-    if (options['nn_model'].lower() == 'cnn'):
-        model = ConvNet(volChannels=options['conv_vol_depth'], irChannels=options['conv_ir_depth'],
-                        predictOp=operation, pipeline=pipeline, derive=gradientFlag)
-    elif (options['nn_model'].lower() == 'lstm'):
-        # model = LSTM(predictOp = predictOp)
-        pass
-    return model, predictOp, x_pl, gradientOp
+    gh.buildModel(options, pipeline=pipeline)
+    return gh
 
 
 def savePipeline(pipeline):
@@ -446,6 +438,9 @@ def main(_):
             if (OPTIONS.chained_model is not None):
                 fileName, directory = cu.splitFileName(OPTIONS.chained_model)
                 chainedOptions = cu.load_obj(directory + '/options.pkl')
+                # DO NOT CONFUSE chained['placeholder'] keeps the reference to the placeholder of the
+                # forward chained network i.e. the output of chained['model'] network
+                # and is delegated in this dictionary while building the new network
                 chained = {"output_dims": chainedOptions['output_dims'], 'options': chainedOptions, 'model': None,
                            'placeholder': None}
             else:
@@ -462,41 +457,40 @@ def main(_):
             raise ValueError("--train_model argument can be lstm or cnn")
 
     if OPTIONS.calculate_gradient:
-        with tf.Session(config=getTfConfig()) as sess:
-            model, predictOp, x_pl, gradient = setupNetwork(sess, options=OPTIONS, gradientFlag=True)
-            if OPTIONS.with_gradient:
-                dh = setupDataHandler(OPTIONS)
-                testX, _ = dh.getTestData()
-                deriv = sess.run(gradient, feed_dict={x_pl: testX})
-                path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
-                transformDerivatives(deriv, dh, testX, path)
-            else:
-                if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
-                    pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
-                    model.setPipelineList(pipelineList)
+        gh = setupNetwork(options=OPTIONS, gradientFlag=True)
+        if OPTIONS.with_gradient:
+            dh = setupDataHandler(OPTIONS)
+            testX, _ = dh.getTestData()
+            deriv = gh.run(gh.gradientOp, testX)
+            path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
+            transformDerivatives(deriv, dh, testX, path)
+        else:
+            if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
+                pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
+                gh.model.setPipelineList(pipelineList)
 
-                swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
-                if (OPTIONS.calibrate_sigma):
-                    if (len(OPTIONS.channel_range) > 1):
-                        channelRange = [int(OPTIONS.channel_range[0]), int(OPTIONS.channel_range[1])]
-                    else:
-                        channelRange = [0, int(OPTIONS.channel_range[0])]
-                    sigmas = swo.calibrate_sigma(model, modelName, dataLength=OPTIONS.batch_width,
-                                                 session=sess, x_pl=x_pl, skip=OPTIONS.skip, part=channelRange)
-                    folder = OPTIONS.checkpoint_dir + modelName + "/"
-                    np.save(folder + "sigmas.npy", sigmas)
+            swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
+            if (OPTIONS.calibrate_sigma):
+                if (len(OPTIONS.channel_range) > 1):
+                    channelRange = [int(OPTIONS.channel_range[0]), int(OPTIONS.channel_range[1])]
                 else:
-                    _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
-                                                                  session=sess, x_pl=x_pl, skip=OPTIONS.skip,
-                                                                  plot_results=False, fullTest=OPTIONS.full_test)
+                    channelRange = [0, int(OPTIONS.channel_range[0])]
+                sigmas = swo.calibrate_sigma(gh, modelName, dataLength=OPTIONS.batch_width, skip=OPTIONS.skip,
+                                             part=channelRange)
+                folder = OPTIONS.checkpoint_dir + modelName + "/"
+                np.save(folder + "sigmas.npy", sigmas)
+            else:
+                _, values, vals, params = swo.compare_history(gh, modelName, dataLength=OPTIONS.batch_width,
+                                                              skip=OPTIONS.skip, plot_results=False,
+                                                              fullTest=OPTIONS.full_test)
 
     if OPTIONS.compare and not OPTIONS.calculate_gradient:
         with tf.Session(config=getTfConfig()) as sess:
-            model, predictOp, x_pl, _ = setupNetwork(sess, OPTIONS)
+            gh = setupNetwork(OPTIONS)
             swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
-            _, values, vals, params = swo.compare_history(model, modelName, dataLength=OPTIONS.batch_width,
-                                                          session=sess, x_pl=x_pl, skip=OPTIONS.skip,
-                                                          plot_results=False, fullTest=OPTIONS.full_test)
+            _, values, vals, params = swo.compare_history(gh, modelName, dataLength=OPTIONS.batch_width,
+                                                          skip=OPTIONS.skip, plot_results=False,
+                                                          fullTest=OPTIONS.full_test)
 
             np.save(OPTIONS.checkpoint_dir + modelName + "Values.npy", values)
             np.save(OPTIONS.checkpoint_dir + modelName + "Vals.npy", vals)
@@ -572,6 +566,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
+    parser.add_argument('-cpp', '--chained_pipeline', type=str, default="", help='Pipeline path of chained model')
     parser.add_argument('--scaler', type=str, default='minmax', help='Scaler')
     parser.add_argument('-ds', '--decay_steps', type=int, default=3000, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
