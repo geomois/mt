@@ -48,12 +48,12 @@ class GraphHandler(object):
             if (gradientFlag):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
 
-    def buildModel(self, optionDict, chained=None, pipeline=None):
+    def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None):
         if (chained is not None):
             chained['placeholder'] = self.chainedPlaceholder
         op = self.predictOperation if self.gradientOp is None else self.gradientOp
         self.model = self.modelType(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
-                                    predictOp=op, pipeline=pipeline, chainedModel=chained,
+                                    predictOp=op, pipeline=outPipeline, inPipeline=inPipeline, chainedModel=chained,
                                     derive=True if self.gradientOp is not None else False)
 
     def run(self, data, op=None):

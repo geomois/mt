@@ -180,16 +180,22 @@ class DataHandler(object):
             self.testData['output'] = outPut
         self.testData['input'] = inPut
 
-    def initializePipeline(self, pipeline):
-        # pdb.set_trace()
-        if (self.predictive is not None and not self.transformed['train']):
-            self._feedTransform('train')
-        if (self.delegatedFromFile and pipeline.steps[1][1] is not None):
-            self.trainData["input"] = pipeline.fit_transform(self.trainData["input"])
-        else:
-            pass
-            # raise Exception("Only data delegated from file can use pipeline")
-        return pipeline
+    def initializePipelines(self, inputPipeline=None, outPipeline=None):
+        if (self.delegatedFromFile):
+            if (outPipeline is not None):
+                self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
+            if (inputPipeline is not None):
+                self.trainData["input"] = outPipeline.fit_transform(self.trainData["input"])
+
+
+        # if (self.predictive is not None and not self.transformed['train']):
+        #     self._feedTransform('train')
+        # if (self.delegatedFromFile and pipeline.steps[1][1] is not None):
+        #     self.trainData["input"] = pipeline.fit_transform(self.trainData["input"])
+        # else:
+        #     pass
+        #     # raise Exception("Only data delegated from file can use pipeline")
+        return inputPipeline, outPipeline
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
@@ -197,9 +203,6 @@ class DataHandler(object):
             self.lastBatchPointer = 0
             if (self.delegatedFromFile):
                 modulo = len(self.trainData["input"])
-                if (pipeline is not None):
-                    # pdb.set_trace()
-                    self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
                 if (self.predictive is not None and not self.transformed['train']):
                     self._feedTransform('train')
                     # modulo = len(self.trainData["input"])
@@ -310,7 +313,6 @@ class DataHandler(object):
                 (-1, 1))  # skip first
         inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, :]  # skip last
         targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
-        pdb.set_trace()
         self.transformed[data] = True
 
     def _reshapeToPredict(self, array):  # CHECK

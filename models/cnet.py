@@ -10,7 +10,8 @@ class ConvNet(object):
                  poolingLayerFlag=False, architecture=['c', 'f', 'd'],
                  activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
-                 regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, derive=False):
+                 regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, inPipeline=None,
+                 derive=False):
 
         self.regularizationStrength = regularizationStrength
         self.fcUnits = deque([int(i) for i in fcUnits])
@@ -27,8 +28,10 @@ class ConvNet(object):
         self.inKernelSize = self.kernels[0]
         self.architecture = architecture
         self.pipeline = pipeline
+        self.inputPipeline = inPipeline
         self.calibrationFunc = calibrationFunc
         self.pipelineList = []
+        self.inputPipelineList = []
         self.chainedModel = chainedModel
         self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
         self.derive = derive
@@ -46,8 +49,6 @@ class ConvNet(object):
         densecount = 0
         convcount = 0
         layer = x
-        if (self.pipeline is not None):
-            layer = self.npToTfFunc(self.pipeline.steps[0][1].func, layer)
         with tf.variable_scope('ConvNet'):
             for i, l in enumerate(self.architecture):
                 if (l.lower() == 'c' or l.lower() == "conv"):
@@ -82,8 +83,6 @@ class ConvNet(object):
                                                  initializer=self._getFunction('init', 'd')())
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     densecount += 1
-        if (self.pipeline is not None):
-            layer = self.npToTfFunc(self.pipeline.steps[0][1].inv_func, layer)
         return layer
 
     def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, activationFunc=tf.nn.relu,
@@ -184,21 +183,31 @@ class ConvNet(object):
     def setPipelineList(self, plist):
         self.pipelineList = plist
 
-    def setCurrentPipeline(self, index):
-        self.pipeline = self.pipelineList[index]
+    def setInputPipelineList(self, plist):
+        self.inputPipelineList = plist
 
-    def _getTransformationFunction(self, transformationType, step):
-        if (self.pipeline.steps[1][1] is not None):
+    def getCurrentPipeline(self, index, ppList):
+        if (len(self.pipelineList) > 1):
+            self.pipeline = self.pipelineList[index]
+        return self.pipeline
+
+    def getCurrentInputPipeline(self, index):
+        if (len(self.inputPipelineList) > 1):
+            self.inputPipeline = self.inputPipelineList[index]
+        return self.inputPipeline
+
+    def _getTransformationFunction(self, transformationType, step, pp):
+        if (pp.steps is not None):
             if (transformationType.lower() == "transform"):
                 if (step.lower() == 'scale'):
-                    return self.pipeline.steps[1][1].transform
+                    return pp.steps[1][1].transform
                 else:
-                    return self.pipeline.steps[0][1].func
+                    return pp.steps[0][1].func
             else:
                 if (step.lower() == 'scale'):
-                    return self.pipeline.steps[1][1].inverse_transform
+                    return pp.steps[1][1].inverse_transform
                 else:
-                    return self.pipeline.steps[0][1].func
+                    return pp.steps[0][1].inv_func
         else:
             raise Exception("No scaler found")
 
@@ -215,14 +224,17 @@ class ConvNet(object):
 
         return inPut
 
-    def applyPipeLine(self, transformationType, x):  # this should be slow, redo
-        if (len(self.pipelineList) != 0):
-            for i in range(x.shape[1]):
-                if (i <= len(self.pipelineList)):
-                    self.setCurrentPipeline(i)
-                    x = self.npToTfFunc(self._getTransformationFunction(transformationType, 'pre'), x)
-                    x[:, i] = self._getTransformationFunction(transformationType, 'scale')(x[:, i].reshape((-1, 1)))[:,
-                              0]
+    def applyPipeLine(self, tType, x, mode):
+        if (mode == 'input'):
+            modeFunc = self.getCurrentInputPipeline
+        else:
+            modeFunc = self.getCurrentPipeline
+
+        for i in range(x.shape[1]):
+            # if (i <= len(self.pipelineList)):
+            pp = modeFunc(i)
+            x = self.npToTfFunc(self._getTransformationFunction(tType, 'pre', pp), x)
+            x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
         else:
             pass
 
@@ -248,6 +260,8 @@ class ConvNet(object):
         chained_pl = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
+            if (len(self.pipelineList) or self.pipeline is not None):
+                chainedOutput = self.getCurrentInputPipeline(0).transform(chainedOutput)
             chained_pl = self.chainedModel['placeholder']
 
         totalDepth = self.volChannels + self.irChannels
@@ -260,8 +274,8 @@ class ConvNet(object):
             else:
                 x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
 
-        if (len(self.pipelineList) > 0):
-            x = self.applyPipeLine('transform', x)
+        if (len(self.inputPipelineList) > 0 or self.inputPipeline is not None):
+            x = self.applyPipeLine('transform', x, 'input')
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         if (chainedOutput is not None):
             out = sess.run(self.outOp, feed_dict={x_pl: x, chained_pl: chainedOutput})
@@ -270,8 +284,8 @@ class ConvNet(object):
         if (self.derive):
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
-            if (self.pipeline is not None):
-                out = self.pipeline.inverse_transform(out)
+            if (len(self.pipelineList) or self.pipeline is not None):
+                out = self.applyPipeLine('inverse', out, 'output')
             if (chainedOutput is not None):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))

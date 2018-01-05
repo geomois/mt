@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import utils.customUtils as cu
+import utils.ahUtils as au
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -96,7 +97,10 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     testX, testY = dataHandler.getTestData()
-    chained_pl = chainedModel['placeholder']
+    chained_pl = None
+    if chainedModel is not None:
+        chained_pl = chainedModel['placeholder']
+
     print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
     if (int(optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
@@ -107,18 +111,16 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
-
-    if (optionDict['use_pipeline']):
-        # pipeline = dataHandler.initializePipeline(getPipeLine())
-        pipeline = getPipeLine()
+    outPP, inPP = getPipelines(optionDict)
     try:
         activation = [ACTIVATION_DICT[act] for act in optionDict['activation']]
     except:
         activation = [ACTIVATION_DICT[ACTIVATION_DEFAULT]]
         pass
+
     cnn = ConvNet(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
-                  poolingLayerFlag=poolingFlag,
-                  architecture=optionDict['architecture'], fcUnits=optionDict['fullyConnectedNodes'], pipeline=pipeline,
+                  poolingLayerFlag=poolingFlag, inPipeline=inPP, pipeline=outPP,
+                  architecture=optionDict['architecture'], fcUnits=optionDict['fullyConnectedNodes'],
                   activationFunctions=activation, chainedModel=chainedModel,
                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
 
@@ -132,10 +134,11 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
 
 
-def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None, pipeline=None):
+def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None):
     # With chained models use already transformed data to avoid some complexity
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
+    inputPipeline = outPipeline = None
     try:
         global_step = tf.Variable(0, trainable=False)
         prevTestLoss = 1
@@ -173,19 +176,22 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
             test_writer = tf.summary.FileWriter(optionDict['log_dir'] + '/test' + timestamp, sess.graph)
 
             ttS = time.time()
-            max_steps = optionDict['max_steps']
+            max_steps = optionDict['max_steps'] + 1
             epoch = 0
             # testX = np.random.random(testX.shape)
             # testY = np.random.random(testY.shape)
+            inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
+                                                                         outPipeline=network.pipeline)
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
-                batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
-
+                batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
                 if (chainedModel is not None):
                     chained_train_x, _ = chainedDH.getNextBatch()
                     cOut = gh.run(op=gh.gradientOp, data=chained_train_x)
                     chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
                                                            chained_train_x.shape)
+                    if (inputPipeline is not None):
+                        chainedInput = inputPipeline.transform(chainedInput)
                     _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                                   feed_dict={x_pl: batch_x, y_pl: batch_y, chained_pl: chainedInput})
                 else:
@@ -200,11 +206,12 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                     print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
                           "{:.8f}".format(out), "Elapsed time: %03f" % elapsedTime)
                 if epoch % optionDict['test_frequency'] == 0 and epoch > 0:
-                    if (epoch == optionDict['test_frequency'] and pipeline is not None):
-                        if (pipeline.steps[1][1] is not None):
-                            print("Transforming test")
-                            testY = pipeline.transform(testY)
-                            # testX = pipeline.transform(testX)
+                    if (outPipeline is not None):
+                        print("Transforming testY")
+                        testY = outPipeline.transform(testY)
+                    if (inputPipeline is not None):
+                        print("Transforming testX")
+                        testX = inputPipeline.transform(testX)
 
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
@@ -231,7 +238,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
-        opts = get_options(False, modelDir=checkpointFolder + '/' + str(optionDict['max_steps']))
+        opts = get_options(False, modelDir=checkpointFolder + str(optionDict['max_steps']))
         opts["input_dims"] = (None, 1, testX.shape[2], testX.shape[3])
         if (gradient is not None):
             opts["output_dims"] = (None, 1)
@@ -248,7 +255,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
         print("Exception during training: ", str(e))
         tf.reset_default_graph()
 
-    return pipeline
+    return inputPipeline, outPipeline
 
 
 def setupChainedModel(chainedModelDict, useDataHandler=False):
@@ -336,25 +343,65 @@ def getIrModel():
         raise RuntimeError("Unknown IR model")
 
 
-def getPipeLine(fileName=None):
-    if (fileName is None):
+def getPipelines(options):
+    inPP = outPP = None
+    if (options['use_pipeline']):
+        try:
+            if (options['pipeline'] is not ""):
+                pipelinePath = options['pipeline']
+            else:
+                pipelinePath = options['checkpoint_dir'] + modelName + "/pipeline.pkl"
+            if (not os.path.exists(pipelinePath)):
+                pipelinePath = None
+            outPP = buildPipeLine(options['transform'], options['scaler'], pipelinePath)
+        except:
+            pass
+    if (options['use_input_pipeline']):
+        try:
+            if (options['input_pipeline'] is not ""):
+                pipelinePath = options['input_pipeline']
+            else:
+                pipelinePath = options['checkpoint_dir'] + modelName + "/input_pipeline.pkl"
+                if (not os.path.exists(pipelinePath)):
+                    pipelinePath = None
+            inPP = buildPipeLine(options['in_transform'], options['in_scaler'], pipelinePath)
+        except:
+            pass
+
+    return outPP, inPP
+
+
+def buildPipeLine(transform, scaler, fName=None):
+    if (fName is None):
         irModel = getIrModel()
-        if (optionDict['no_transform']):
-            transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
+        if (transform):
+            transformFunc = au.FunctionTransformerWithInverse(func=irModel["transformation"],
+                                                              inv_func=irModel["inverse_transformation"])
         else:
-            transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
-                                                                inv_func=irModel["inverse_transformation"])
+            transformFunc = au.FunctionTransformerWithInverse(func=None, inv_func=None)
 
-        if (optionDict['scaler'].lower() in SCALER_DICT):
-            scaler = SCALER_DICT[optionDict['scaler']]()
+        if (scaler.lower() in SCALER_DICT):
+            sc = SCALER_DICT[scaler.lower()]()
         else:
-            scaler = None
+            sc = None
 
-        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', scaler)])
+        pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', sc)])
     else:
-        pipeline = joblib.load(fileName)
+        pipeline = joblib.load(fName)
 
     return pipeline
+
+
+def savePipeline(pipeline, mode):
+    if (pipeline is not None):
+        pipelinePath = optionDict['checkpoint_dir'] + modelName
+        if (not os.path.exists(pipelinePath)):
+            os.makedirs(pipelinePath)
+        if (mode == 'in'):
+            pref = 'input_'
+        else:
+            pref = 'out_'
+        joblib.dump(pipeline, pipelinePath + '/' + pref + "pipeline.pkl", compress=1)
 
 
 def getTfConfig():
@@ -377,29 +424,12 @@ def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
     """
     if (type(options) == argparse.Namespace):
         options = vars(options)
-    fileName, directory = cu.splitFileName(options['model_dir'])
+    fName, directory = cu.splitFileName(options['model_dir'])
     gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig(), chainedPrefix=prefix)
-    gh.importSavedNN(fileName, gradientFlag=gradientFlag)
-    pipeline = None
-    if (options['use_pipeline']):
-        try:
-            if (options['pipeline'] is not ""):
-                pipelinePath = options['pipeline']
-            else:
-                pipelinePath = options['checkpoint_dir'] + '/' + modelName + "/pipeline.pkl"
-            pipeline = getPipeLine(pipelinePath)
-        except:
-            pass
-    gh.buildModel(options, chained=chainedDict, pipeline=pipeline)
+    gh.importSavedNN(fName, gradientFlag=gradientFlag)
+    outPipeline, inPipeline = getPipelines(options)
+    gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline)
     return gh
-
-
-def savePipeline(pipeline):
-    if (pipeline is not None):
-        pipelinePath = optionDict['checkpoint_dir'] + modelName
-        if (not os.path.exists(pipelinePath)):
-            os.makedirs(pipelinePath)
-        joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
 
 
 def buildModelName(ps, cr, cm, suff, nn, arch, bw, cvd, cid):
@@ -420,11 +450,11 @@ def loadChained(options):
     if (type(options) == argparse.Namespace):
         options = vars(options)
     if (options['chained_model'] is not None):
-        fileName, directory = cu.splitFileName(options['chained_model'])
+        fName, directory = cu.splitFileName(options['chained_model'])
         chainedOptions = cu.load_obj(directory + '/options.pkl')
-        # DO NOT CONFUSE chained['placeholder'] keeps the reference to the placeholder of the
+        # DO NOT CONFUSE, chained['placeholder'] keeps the reference to the placeholder of the
         # forward chained network i.e. the output of chained['model'] network
-        # and is delegated in this dictionary while building the new network
+        # and is delegated in this dictionary while building the new network (in new network's graph).
         # 'model' key is expected to carry an GraphHandler item of the network
         chained_pl = tf.placeholder(tf.float32, shape=chainedOptions['output_dims'], name="chainedx_pl")
         # When loading models chained_pl MUST be the reference to the placeholder loaded in the "chained graph"
@@ -465,9 +495,10 @@ def main(_):
             chained = loadChained(optionDict)
             dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
                                                                                         chainedModel=chained)
-            pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=pipeline,
-                               chainedModel=cnn.chainedModel)
-            savePipeline(pipeline)
+            inputPipeline, outPipeline = trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
+                                                 chainedModel=cnn.chainedModel)
+            savePipeline(inputPipeline, 'in')
+            savePipeline(outPipeline, 'out')
         elif optionDict['nn_model'] == 'lstm':
             trainLSTM(dh)
         else:
@@ -501,6 +532,9 @@ def main(_):
             chained = loadChained(optionDict)
             _, chained = setupChainedModel(chained)
             gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
+            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] is not None):
+                pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+                gh.model.setPipelineList(pipelineList)
 
             swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             _, values, vals, params = swo.compare_history(gh, modelName, dataLength=optionDict['batch_width'],
@@ -581,8 +615,10 @@ if __name__ == '__main__':
     parser.add_argument('--skip', type=int, default=0,
                         help='Skip n first dates in history comparison')
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
+    parser.add_argument('-ipp', '--input_pipeline', type=str, default="", help="Pipeline path for input data")
     parser.add_argument('-cpp', '--chained_pipeline', type=str, default="", help='Pipeline path of chained model')
     parser.add_argument('--scaler', type=str, default='minmax', help='Scaler')
+    parser.add_argument('--in_scaler', type=str, default='minmax', help='Scaler')
     parser.add_argument('-ds', '--decay_steps', type=int, default=3000, help='Decay steps')
     parser.add_argument('-dr', '--decay_rate', type=float, default=0.0, help='Decay rate')
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
@@ -597,6 +633,8 @@ if __name__ == '__main__':
                         help='Computes partial derivative wrt the neural network input')
     parser.add_argument('-up', '--use_pipeline', action='store_true',
                         help='Use of pipeline for pre-processing')
+    parser.add_argument('-uip', '--use_input_pipeline', action='store_true',
+                        help='Use of pipeline for pre-processing')
     parser.add_argument('--full_test', action='store_true', help='Calibrate history with new starting points++')
     parser.add_argument('--suffix', type=str, default="", help='Custom string identifier for modelName')
     parser.add_argument('--target', type=str, default=None, help='Use specific data target')
@@ -607,7 +645,8 @@ if __name__ == '__main__':
     parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
                         help='Future reference count of days after initial reference day')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
-    parser.add_argument('--no_transform', action='store_true', help="Don't transform data with pipeline")
+    parser.add_argument('--transform', action='store_true', help="Transform data with pipeline")
+    parser.add_argument('--in_transform', action='store_true', help="Transform input data with pipeline")
     parser.add_argument('--extend_training', action='store_true', help="Extend training steps")
     parser.add_argument('--load_options', action='store_true', help="Load options from file")
     parser.add_argument('-chain', '--chained_model', type=str, default=None,
