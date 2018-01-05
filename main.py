@@ -1,6 +1,5 @@
 import argparse, os, time, pdb, sys
 import tensorflow as tf
-import numpy as np
 from graphHandler import GraphHandler
 from models.cnet import ConvNet
 import models.instruments as inst
@@ -79,6 +78,7 @@ IR_MODEL = {'hullwhite': hullwhite_analytic,
 # endregion optionDictionaries
 
 OPTIONS = None
+optionDict = None
 modelName = None
 tf.set_random_seed(42)
 np.random.seed(42)
@@ -87,8 +87,8 @@ np.random.seed(42)
 def trainLSTM(dataHandler):
     tf.set_random_seed(42)
     np.random.seed(42)
-    if OPTIONS.dnn_hidden_units:
-        dnn_hidden_units = OPTIONS.dnn_hidden_units.split(",")
+    if optionDict['.dnn_hidden_units']:
+        dnn_hidden_units = optionDict['.dnn_hidden_units'].split(",")
         dnn_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in dnn_hidden_units]
     else:
         dnn_hidden_units = []
@@ -96,40 +96,35 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     testX, testY = dataHandler.getTestData()
-    chained_pl = None
-    if (chainedModel is not None):
-        chained_pl = tf.placeholder(tf.float32, shape=chainedModel['output_dims'])
-        chainedModel['placeholder'] = chained_pl
-        prefix = 'chained'
-    else:
-        prefix = ''
+    chained_pl = chainedModel['placeholder']
     print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
-    if (int(OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1]) != testY.shape[1]):
+    if (int(optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
         print("Aligning...")
-        OPTIONS.fullyConnectedNodes[len(OPTIONS.fullyConnectedNodes) - 1] = testY.shape[1]
+        optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1] = testY.shape[1]
     print("Output dims" + str((None, testY.shape[1])))
-    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name=prefix + "x_pl")
-    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name=prefix + "y_pl")
+    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
+    y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
 
-    if (OPTIONS.use_pipeline):
+    if (optionDict['use_pipeline']):
         # pipeline = dataHandler.initializePipeline(getPipeLine())
         pipeline = getPipeLine()
     try:
-        activation = [ACTIVATION_DICT[act] for act in OPTIONS.activation]
+        activation = [ACTIVATION_DICT[act] for act in optionDict['activation']]
     except:
         activation = [ACTIVATION_DICT[ACTIVATION_DEFAULT]]
         pass
-    cnn = ConvNet(volChannels=OPTIONS.conv_vol_depth, irChannels=OPTIONS.conv_ir_depth, poolingLayerFlag=poolingFlag,
-                  architecture=OPTIONS.architecture, fcUnits=OPTIONS.fullyConnectedNodes, pipeline=pipeline,
+    cnn = ConvNet(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
+                  poolingLayerFlag=poolingFlag,
+                  architecture=optionDict['architecture'], fcUnits=optionDict['fullyConnectedNodes'], pipeline=pipeline,
                   activationFunctions=activation, chainedModel=chainedModel,
                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
 
     pred = cnn.inference(x_pl, chained_pl)
     tf.add_to_collection("predict", pred)
-    if (OPTIONS.use_calibration_loss):
+    if (optionDict['use_calibration_loss']):
         loss = cnn.calibrationLoss(pred)
     else:
         loss = cnn.loss(pred, y_pl)
@@ -144,28 +139,29 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
     try:
         global_step = tf.Variable(0, trainable=False)
         prevTestLoss = 1
-        checkpointFolder = OPTIONS.checkpoint_dir + modelName + "/"
+        checkpointFolder = optionDict['checkpoint_dir'] + modelName + "/"
         timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
-        if (OPTIONS.decay_rate > 0):
-            learningRate = tf.train.exponential_decay(learning_rate=OPTIONS.learning_rate,
+        if (optionDict['decay_rate'] > 0):
+            learningRate = tf.train.exponential_decay(learning_rate=optionDict['learning_rate'],
                                                       global_step=global_step,
-                                                      decay_steps=OPTIONS.decay_steps,
-                                                      decay_rate=OPTIONS.decay_rate,
-                                                      staircase=OPTIONS.decay_staircase)
+                                                      decay_steps=optionDict['decay_steps'],
+                                                      decay_rate=optionDict['decay_rate'],
+                                                      staircase=optionDict['decay_staircase'])
         else:
-            learningRate = OPTIONS.learning_rate
+            learningRate = optionDict['learning_rate']
 
-        optimizer = OPTIMIZER_DICT[OPTIONS.optimizer](learning_rate=learningRate)
+        optimizer = OPTIMIZER_DICT[optionDict['optimizer']](learning_rate=learningRate)
         opt = optimizer.minimize(loss, global_step=global_step)
 
         gradient = None
-        if (OPTIONS.with_gradient):
+        if (optionDict['with_gradient']):
             gradient = tf.gradients(pred, x_pl)
 
         with tf.Session(config=getTfConfig()) as sess:
             chained_pl = chainedDH = None  # prevent IDE from being annoying
             if (chainedModel is not None):
-                chainedDH, gh = setupChainedModel(chainedModel)
+                chainedDH, chainedModel = setupChainedModel(chainedModel, useDataHandler=True)
+                gh = chainedModel['model']
                 chained_pl = chainedModel['placeholder']
                 # assert dataHandler.dataFileName == chainedDH.dataFileName, "The chained models MUST use the same data source"
                 assert dataHandler.sliding == chainedDH.sliding, "The chained models MUST use same sliders"
@@ -173,14 +169,16 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 assert dataHandler.testDataPercentage == chainedDH.testDataPercentage, "Same test percentage"
 
             sess.run(tf.global_variables_initializer())
-            train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
-            test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
+            train_writer = tf.summary.FileWriter(optionDict['log_dir'] + '/train' + timestamp, sess.graph)
+            test_writer = tf.summary.FileWriter(optionDict['log_dir'] + '/test' + timestamp, sess.graph)
 
             ttS = time.time()
-            max_steps = OPTIONS.max_steps
+            max_steps = optionDict['max_steps']
             epoch = 0
+            # testX = np.random.random(testX.shape)
+            # testY = np.random.random(testY.shape)
             while epoch < max_steps:
-                ttS = time.time() if epoch % OPTIONS.print_frequency == 1 else ttS
+                ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(pipeline=pipeline, randomDraw=False)
 
                 if (chainedModel is not None):
@@ -193,16 +191,16 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 else:
                     _, out, merged_sum = sess.run([opt, loss, mergedSummaries],
                                                   feed_dict={x_pl: batch_x, y_pl: batch_y})
-                if epoch % OPTIONS.print_frequency == 0:
+                if epoch % optionDict['print_frequency'] == 0:
                     elapsedTime = time.time() - ttS
                     train_writer.add_summary(merged_sum, epoch)
                     train_writer.flush()
                     lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
                     print("====================================================================================")
                     print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
-                          "{:.6f}".format(out), "Elapsed time: %03f" % elapsedTime)
-                if epoch % OPTIONS.test_frequency == 0 and epoch > 0:
-                    if (epoch == OPTIONS.test_frequency and pipeline is not None):
+                          "{:.8f}".format(out), "Elapsed time: %03f" % elapsedTime)
+                if epoch % optionDict['test_frequency'] == 0 and epoch > 0:
+                    if (epoch == optionDict['test_frequency'] and pipeline is not None):
                         if (pipeline.steps[1][1] is not None):
                             print("Transforming test")
                             testY = pipeline.transform(testY)
@@ -213,18 +211,19 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                         cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
                         chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
                                                                chained_test_x.shape)
+
                         out, merged_sum = sess.run([loss, mergedSummaries],
                                                    feed_dict={x_pl: testX, y_pl: testY, chained_pl: chainedInput})
                     else:
                         out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
 
-                    if (out + 0.00001 < prevTestLoss and OPTIONS.extend_training):
-                        if (max_steps - epoch <= OPTIONS.test_frequency):
-                            max_steps += OPTIONS.test_frequency + 1
+                    if (out + 0.00001 < prevTestLoss and optionDict['extend_training']):
+                        if (max_steps - epoch <= optionDict['test_frequency']):
+                            max_steps += optionDict['test_frequency'] + 1
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
                     print("Test set:" "loss=", "{:.6f}".format(out))
-                if epoch % OPTIONS.checkpoint_freq == 0 and epoch > 0:
+                if epoch % optionDict['checkpoint_freq'] == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
                 epoch += 1
 
@@ -232,7 +231,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
-        opts = get_options(False, modelDir=checkpointFolder + '/' + str(OPTIONS.max_steps))
+        opts = get_options(False, modelDir=checkpointFolder + '/' + str(optionDict['max_steps']))
         opts["input_dims"] = (None, 1, testX.shape[2], testX.shape[3])
         if (gradient is not None):
             opts["output_dims"] = (None, 1)
@@ -240,26 +239,29 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
             opts["output_dims"] = (None, testY.shape[1])
         cu.save_obj(opts, checkpointFolder + 'options.pkl')
         tf.reset_default_graph()
-    except Exception as ex:
+
+    except Exception as e:
         # pdb.set_trace()
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
         print(exc_type, fname, exc_tb.tb_lineno)
-        print("Exception during training: ", str(ex))
+        print("Exception during training: ", str(e))
         tf.reset_default_graph()
 
     return pipeline
 
 
-def setupChainedModel(chainedModel):
-    dh = setupDataHandler(chainedModel['options'], allowPredictiveTransformation=False)
-    gradFlag = chainedModel['options']['with_gradient']
-    gh = setupNetwork(chainedModel['options'], gradientFlag=gradFlag)
-    if (OPTIONS.chained_pipeline is not None):  # keep OPTIONS not chainedModel['options']
-        pipelineList = cu.loadSavedScaler(OPTIONS.chained_pipeline)
+def setupChainedModel(chainedModelDict, useDataHandler=False):
+    dh = None
+    if (useDataHandler):
+        dh = setupDataHandler(chainedModelDict['options'], allowPredictiveTransformation=False)
+    gradFlag = chainedModelDict['options']['with_gradient']
+    gh = setupNetwork(chainedModelDict['options'], gradientFlag=gradFlag)
+    if (optionDict['chained_pipeline'] is not None):  # keep OPTIONS not chainedModel['options']
+        pipelineList = cu.loadSavedScaler(optionDict['chained_pipeline'])
         gh.model.setPipelineList(pipelineList)
-    chainedModel['model'] = gh
-    return dh, gh
+    chainedModelDict['model'] = gh
+    return dh, chainedModelDict
 
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
@@ -268,7 +270,7 @@ def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True)
     pdb.set_trace()
     if (save):
         if (folder is None):
-            folder = OPTIONS.checkpoint_dir + modelName + "/"
+            folder = optionDict['checkpoint_dir'] + modelName + "/"
         np.save(folder + "testDerivatives.npy", der)
 
     return der
@@ -305,8 +307,8 @@ def setupDataHandler(options, allowPredictiveTransformation=True):
 
 
 def get_options(printFlag=True, modelDir=None):
-    options = vars(OPTIONS)
-    for key, value in vars(OPTIONS).items():
+    options = optionDict
+    for key, value in optionDict.items():
         if (key == 'model_dir' and modelDir is not None):
             value = modelDir
             options[key] = modelDir
@@ -319,17 +321,17 @@ def get_options(printFlag=True, modelDir=None):
 
 def initDirectories():
     # Make directories if they do not exists yet
-    if not tf.gfile.Exists(OPTIONS.log_dir):
-        tf.gfile.MakeDirs(OPTIONS.log_dir)
-    if not tf.gfile.Exists(OPTIONS.data_dir):
-        tf.gfile.MakeDirs(OPTIONS.data_dir)
-    if not tf.gfile.Exists(OPTIONS.checkpoint_dir):
-        tf.gfile.MakeDirs(OPTIONS.checkpoint_dir)
+    if not tf.gfile.Exists(optionDict['log_dir']):
+        tf.gfile.MakeDirs(optionDict['log_dir'])
+    if not tf.gfile.Exists(optionDict['data_dir']):
+        tf.gfile.MakeDirs(optionDict['data_dir'])
+    if not tf.gfile.Exists(optionDict['checkpoint_dir']):
+        tf.gfile.MakeDirs(optionDict['checkpoint_dir'])
 
 
 def getIrModel():
-    if (str(OPTIONS.model) in IR_MODEL):
-        return IR_MODEL[OPTIONS.model]
+    if (str(optionDict['model']) in IR_MODEL):
+        return IR_MODEL[optionDict['model']]
     else:
         raise RuntimeError("Unknown IR model")
 
@@ -337,14 +339,14 @@ def getIrModel():
 def getPipeLine(fileName=None):
     if (fileName is None):
         irModel = getIrModel()
-        if (OPTIONS.no_transform):
+        if (optionDict['no_transform']):
             transformFunc = inst.FunctionTransformerWithInverse(func=None, inv_func=None)
         else:
             transformFunc = inst.FunctionTransformerWithInverse(func=irModel["transformation"],
                                                                 inv_func=irModel["inverse_transformation"])
 
-        if (OPTIONS.scaler.lower() in SCALER_DICT):
-            scaler = SCALER_DICT[OPTIONS.scaler]()
+        if (optionDict['scaler'].lower() in SCALER_DICT):
+            scaler = SCALER_DICT[optionDict['scaler']]()
         else:
             scaler = None
 
@@ -356,25 +358,27 @@ def getPipeLine(fileName=None):
 
 
 def getTfConfig():
-    if (OPTIONS.use_cpu):
+    if (optionDict['use_cpu']):
         config = tf.ConfigProto(device_count={'GPU': 0})
     else:
-        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=OPTIONS.gpu_memory_fraction)
+        gpuMem = tf.GPUOptions(per_process_gpu_memory_fraction=optionDict['gpu_memory_fraction'])
         config = tf.ConfigProto(gpu_options=gpuMem)
 
     return config
 
 
-def setupNetwork(options, gradientFlag=False):
+def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
     """
     :param options:
+    :param chainedDict
     :param gradientFlag:
+    :param prefix:
     :return: GraphHandler
     """
     if (type(options) == argparse.Namespace):
         options = vars(options)
     fileName, directory = cu.splitFileName(options['model_dir'])
-    gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig())
+    gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig(), chainedPrefix=prefix)
     gh.importSavedNN(fileName, gradientFlag=gradientFlag)
     pipeline = None
     if (options['use_pipeline']):
@@ -386,13 +390,13 @@ def setupNetwork(options, gradientFlag=False):
             pipeline = getPipeLine(pipelinePath)
         except:
             pass
-    gh.buildModel(options, pipeline=pipeline)
+    gh.buildModel(options, chained=chainedDict, pipeline=pipeline)
     return gh
 
 
 def savePipeline(pipeline):
     if (pipeline is not None):
-        pipelinePath = OPTIONS.checkpoint_dir + modelName
+        pipelinePath = optionDict['checkpoint_dir'] + modelName
         if (not os.path.exists(pipelinePath)):
             os.makedirs(pipelinePath)
         joblib.dump(pipeline, pipelinePath + "/pipeline.pkl", compress=1)
@@ -412,89 +416,100 @@ def buildModelName(ps, cr, cm, suff, nn, arch, bw, cvd, cid):
     return mN
 
 
+def loadChained(options):
+    if (type(options) == argparse.Namespace):
+        options = vars(options)
+    if (options['chained_model'] is not None):
+        fileName, directory = cu.splitFileName(options['chained_model'])
+        chainedOptions = cu.load_obj(directory + '/options.pkl')
+        # DO NOT CONFUSE chained['placeholder'] keeps the reference to the placeholder of the
+        # forward chained network i.e. the output of chained['model'] network
+        # and is delegated in this dictionary while building the new network
+        # 'model' key is expected to carry an GraphHandler item of the network
+        chained_pl = tf.placeholder(tf.float32, shape=chainedOptions['output_dims'], name="chainedx_pl")
+        # When loading models chained_pl MUST be the reference to the placeholder loaded in the "chained graph"
+        # If the model is created in this scope then placeholder is already in the "chained graph" = default graph
+        # this is handled in GraphHandler.buildModel()
+        chained = {"output_dims": chainedOptions['output_dims'], 'options': chainedOptions, 'model': None,
+                   'placeholder': chained_pl}
+    else:
+        chained = None
+
+    return chained
+
+
 def main(_):
     _ = get_options()
     initDirectories()
     swo = None
-    if (OPTIONS.weight_reg_strength is None):
-        OPTIONS.weight_reg_strength = 0.0
-    inst.setDataFileName(OPTIONS.data_dir)
-    if (OPTIONS.calibrate or OPTIONS.use_calibration_loss or OPTIONS.exportForwardRates):
-        swo = inst.get_swaptiongen(getIrModel(), currency=OPTIONS.currency, irType=OPTIONS.irType,
-                                   volFileName=OPTIONS.volFileName, irFileName=OPTIONS.irFileName)
-        if OPTIONS.calibrate:
-            swo.calibrate_history(start=int(OPTIONS.historyStart), end=int(OPTIONS.historyEnd))
+    if (optionDict['weight_reg_strength'] is None):
+        optionDict['weight_reg_strength'] = 0.0
+    inst.setDataFileName(optionDict['data_dir'])
+    if (optionDict['calibrate'] or optionDict['use_calibration_loss'] or optionDict['exportForwardRates']):
+        swo = inst.get_swaptiongen(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
+                                   volFileName=optionDict['volFileName'], irFileName=optionDict['irFileName'])
+        if optionDict['calibrate']:
+            swo.calibrate_history(start=int(optionDict['historyStart']), end=int(optionDict['historyEnd']))
 
-        if OPTIONS.exportForwardRates:
-            exportPath = './exports/' + OPTIONS.suffix + 'fwCurves' + "_fDays" + str(OPTIONS.futureIncrement) + ".csv"
+        if optionDict['exportForwardRates']:
+            exportPath = './exports/' + optionDict['suffix'] + 'fwCurves' + "_fDays" + str(
+                optionDict['futureIncrement']) + ".csv"
             if (not os.path.isfile(exportPath)):
-                swo.calcForward(path=exportPath, futureIncrementInDays=OPTIONS.futureIncrement)
+                swo.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
             else:
                 print("File already exists")
 
-    if OPTIONS.is_train:
-        dh = setupDataHandler(OPTIONS)
-        if OPTIONS.nn_model == 'cnn':
-            if (OPTIONS.chained_model is not None):
-                fileName, directory = cu.splitFileName(OPTIONS.chained_model)
-                chainedOptions = cu.load_obj(directory + '/options.pkl')
-                # DO NOT CONFUSE chained['placeholder'] keeps the reference to the placeholder of the
-                # forward chained network i.e. the output of chained['model'] network
-                # and is delegated in this dictionary while building the new network
-                chained = {"output_dims": chainedOptions['output_dims'], 'options': chainedOptions, 'model': None,
-                           'placeholder': None}
-            else:
-                chained = None
-
+    if optionDict['is_train']:
+        dh = setupDataHandler(optionDict)
+        if optionDict['nn_model'] == 'cnn':
+            chained = loadChained(optionDict)
             dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
                                                                                         chainedModel=chained)
             pipeline = trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline=pipeline,
                                chainedModel=cnn.chainedModel)
             savePipeline(pipeline)
-        elif OPTIONS.nn_model == 'lstm':
+        elif optionDict['nn_model'] == 'lstm':
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
 
-    if OPTIONS.calculate_gradient:
-        gh = setupNetwork(options=OPTIONS, gradientFlag=True)
-        if OPTIONS.with_gradient:
-            dh = setupDataHandler(OPTIONS)
-            testX, _ = dh.getTestData()
-            deriv = gh.run(gh.gradientOp, testX)
-            path = OPTIONS.checkpoint_dir if OPTIONS.checkpoint_dir != CHECKPOINT_DIR_DEFAULT else None
-            transformDerivatives(deriv, dh, testX, path)
-        else:
-            if (OPTIONS.use_pipeline and OPTIONS.pipeline is not None):
-                pipelineList = cu.loadSavedScaler(OPTIONS.pipeline)
+    if optionDict['calculate_gradient']:
+        gh, _ = setupNetwork(options=optionDict, gradientFlag=True)
+        if optionDict['calibrate_sigma']:
+            if (optionDict['use_pipeline'] and optionDict['pipeline'] is not None):
+                pipelineList = cu.loadSavedScaler(optionDict['pipeline'])
                 gh.model.setPipelineList(pipelineList)
 
-            swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
-            if (OPTIONS.calibrate_sigma):
-                if (len(OPTIONS.channel_range) > 1):
-                    channelRange = [int(OPTIONS.channel_range[0]), int(OPTIONS.channel_range[1])]
-                else:
-                    channelRange = [0, int(OPTIONS.channel_range[0])]
-                sigmas = swo.calibrate_sigma(gh, modelName, dataLength=OPTIONS.batch_width, skip=OPTIONS.skip,
-                                             part=channelRange)
-                folder = OPTIONS.checkpoint_dir + modelName + "/"
-                np.save(folder + "sigmas.npy", sigmas)
+            swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            if (len(optionDict['channel_range']) > 1):
+                channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
             else:
-                _, values, vals, params = swo.compare_history(gh, modelName, dataLength=OPTIONS.batch_width,
-                                                              skip=OPTIONS.skip, plot_results=False,
-                                                              fullTest=OPTIONS.full_test)
+                channelRange = [0, int(optionDict['channel_range'][0])]
+            sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'], skip=optionDict['skip'],
+                                         part=channelRange)
+            folder = optionDict['checkpoint_dir'] + modelName + "/"
+            np.save(folder + "sigmas.npy", sigmas)
+        else:
+            dh = setupDataHandler(optionDict)
+            testX, _ = dh.getTestData()
+            deriv = gh.run(gh.gradientOp, testX)
+            path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
+            transformDerivatives(deriv, dh, testX, path)
 
-    if OPTIONS.compare and not OPTIONS.calculate_gradient:
+    if optionDict['compare']:
         with tf.Session(config=getTfConfig()) as sess:
-            gh = setupNetwork(OPTIONS)
-            swo = inst.get_swaptiongen(getIrModel(), OPTIONS.currency, OPTIONS.irType)
-            _, values, vals, params = swo.compare_history(gh, modelName, dataLength=OPTIONS.batch_width,
-                                                          skip=OPTIONS.skip, plot_results=False,
-                                                          fullTest=OPTIONS.full_test)
+            chained = loadChained(optionDict)
+            _, chained = setupChainedModel(chained)
+            gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
 
-            np.save(OPTIONS.checkpoint_dir + modelName + "Values.npy", values)
-            np.save(OPTIONS.checkpoint_dir + modelName + "Vals.npy", vals)
-            np.save(OPTIONS.checkpoint_dir + modelName + "Params.npy", params)
+            swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            _, values, vals, params = swo.compare_history(gh, modelName, dataLength=optionDict['batch_width'],
+                                                          skip=optionDict['skip'], plot_results=False,
+                                                          fullTest=optionDict['full_test'])
+
+            np.save(optionDict['checkpoint_dir'] + modelName + "Values.npy", values)
+            np.save(optionDict['checkpoint_dir'] + modelName + "Vals.npy", vals)
+            np.save(optionDict['checkpoint_dir'] + modelName + "Params.npy", params)
 
 
 if __name__ == '__main__':
@@ -594,13 +609,36 @@ if __name__ == '__main__':
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--no_transform', action='store_true', help="Don't transform data with pipeline")
     parser.add_argument('--extend_training', action='store_true', help="Extend training steps")
+    parser.add_argument('--load_options', action='store_true', help="Load options from file")
     parser.add_argument('-chain', '--chained_model', type=str, default=None,
                         help="Loads model defined in file and chains it with the current nn model")
 
     OPTIONS, unparsed = parser.parse_known_args()
-    modelName = buildModelName(ps=OPTIONS.predictiveShape, cr=OPTIONS.channel_range, cm=OPTIONS.chained_model,
-                               suff=OPTIONS.suffix,
-                               nn=OPTIONS.nn_model, arch=OPTIONS.architecture, bw=OPTIONS.batch_width,
-                               cvd=OPTIONS.conv_vol_depth,
-                               cid=OPTIONS.conv_ir_depth)
+    if (OPTIONS.load_options):
+        try:
+            fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
+            optionDict = cu.load_obj(model_dir + '/options.pkl')
+            optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
+            # Keep basic operations
+            optionDict['calibrate'] = OPTIONS.calibrate
+            optionDict['use_calibration_loss'] = OPTIONS.use_calibration_loss
+            optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
+            optionDict['is_train'] = OPTIONS.is_train
+            optionDict['compare'] = OPTIONS.compare
+            optionDict['calculate_gradient'] = OPTIONS.calculate_gradient
+            # Keep calibration related input
+            optionDict['currency'] = OPTIONS.currency
+            optionDict['irType'] = OPTIONS.irType
+
+
+        except Exception as ex:
+            raise Exception("Exception loading option from file:" + str(ex))
+    else:
+        optionDict = vars(OPTIONS)
+
+    modelName = buildModelName(ps=optionDict['predictiveShape'], cr=optionDict['channel_range'],
+                               cm=optionDict['chained_model'], suff=optionDict['suffix'], nn=optionDict['nn_model'],
+                               arch=optionDict['architecture'], bw=optionDict['batch_width'],
+                               cvd=optionDict['conv_vol_depth'], cid=optionDict['conv_ir_depth'])
+
     tf.app.run()

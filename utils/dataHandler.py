@@ -298,7 +298,6 @@ class DataHandler(object):
             output = targetDict['output']
             window = inWidth
             targetArray = np.empty((0, outDepth))
-            pdb.set_trace()
             for i in range(0, targetShape[0] - window):
                 for j in range(self.channelStart, self.channelEnd, outDepth):
                     colEnd = j + outDepth

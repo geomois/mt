@@ -30,7 +30,7 @@ class ConvNet(object):
         self.calibrationFunc = calibrationFunc
         self.pipelineList = []
         self.chainedModel = chainedModel
-        self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims']
+        self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
         self.derive = derive
 
     def inference(self, x, chainedValues=None):
@@ -48,8 +48,7 @@ class ConvNet(object):
         layer = x
         if (self.pipeline is not None):
             layer = self.npToTfFunc(self.pipeline.steps[0][1].func, layer)
-        prefix = '' if self.chainedModel is None else 'chained'
-        with tf.variable_scope(prefix + 'ConvNet'):
+        with tf.variable_scope('ConvNet'):
             for i, l in enumerate(self.architecture):
                 if (l.lower() == 'c' or l.lower() == "conv"):
                     with tf.variable_scope('convLayer' + str(convcount)):
@@ -231,10 +230,10 @@ class ConvNet(object):
 
     def derivationProc(self, out, totalDepth, xShape):
         der = cu.transformDerivatives(out, 0, totalDepth, xShape)
-        if(der.shape[1]>1):
-            out=np.average(der,axis=0).reshape((-1,1))
+        if (der.shape[1] > 1):
+            out = np.average(der, axis=0).reshape((-1, 1))
         else:
-            out = np.average(der).reshape((-1,1))
+            out = np.average(der).reshape((-1, 1))
         # print(der.shape)
         # print(der[len(der) - 1, 0], np.average(der))
         # out = [der[0, 0]]
@@ -246,10 +245,12 @@ class ConvNet(object):
 
     def predict(self, vol, ir, sess, x_pl, *args):
         chainedOutput = None
+        chained_pl = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
+            chained_pl = self.chainedModel['placeholder']
 
-        totalDepth = self.volChannels + self.irChannels + self.chainedChannel
+        totalDepth = self.volChannels + self.irChannels
         x = np.empty((0, totalDepth))
         if (self.volChannels > 0):
             x = np.float32(vol[:, :self.volChannels])
@@ -261,18 +262,19 @@ class ConvNet(object):
 
         if (len(self.pipelineList) > 0):
             x = self.applyPipeLine('transform', x)
-
-        if (self.chainedChannel > 0):
-            x = np.append(chainedOutput[:self.chainedChannel], x)
-
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
-        out = sess.run([self.outOp], feed_dict={x_pl: x})
-        if (self.derive):
-            out = self.derivationProc(out[0], totalDepth, x.shape)
+        if (chainedOutput is not None):
+            out = sess.run(self.outOp, feed_dict={x_pl: x, chained_pl: chainedOutput})
         else:
-            out = np.asarray(out).reshape((1, 2))
+            out = sess.run(self.outOp, feed_dict={x_pl: x})
+        if (self.derive):
+            out = self.derivationProc(out, totalDepth, x.shape)
+        else:
             if (self.pipeline is not None):
                 out = self.pipeline.inverse_transform(out)
+            if (chainedOutput is not None):
+                out = np.append(chainedOutput, out)
+            out = out.reshape((1, -1))
             out = out.tolist()
 
         return out

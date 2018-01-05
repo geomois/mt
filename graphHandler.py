@@ -5,7 +5,7 @@ import pdb
 
 
 class GraphHandler(object):
-    def __init__(self, modelPath, modelType, sessConfig, chained=""):
+    def __init__(self, modelPath, modelType, sessConfig, chainedPrefix=""):
         if (modelType.lower() == 'cnn'):
             self.modelType = ConvNet
         else:
@@ -14,9 +14,10 @@ class GraphHandler(object):
         self.model = None
         self.session = None
         self.graph = tf.Graph()
-        self.prefix = chained
+        self.prefix = chainedPrefix
         self.predictOperation = None
         self.inputPlaceholder = None
+        self.chainedPlaceholder = None
         self.gradientOp = None
         self.sessionConfig = sessConfig
 
@@ -30,10 +31,15 @@ class GraphHandler(object):
             saver = tf.train.import_meta_graph(self.modelPath + fileName + ".meta", clear_devices=False)
             graph = tf.get_default_graph()
             check = tf.train.get_checkpoint_state(self.modelPath)
-            x_pl = graph.get_tensor_by_name(self.prefix + "x_pl:0")
+            x_pl = graph.get_tensor_by_name("x_pl:0")
+            if (self.prefix != ""):
+                self.chainedPlaceholder = graph.get_tensor_by_name(self.prefix + "x_pl:0")
             self.session.run(tf.global_variables_initializer())
             if (fileName is None):
-                saver.restore(self.session, check.model_checkpoint_path)
+                try:
+                    saver.restore(self.session, check.model_checkpoint_path)
+                except:
+                    saver.restore(self.session, self.modelPath + fileName)
             else:
                 saver.restore(self.session, self.modelPath + fileName)
             self.predictOperation = tf.get_collection("predict")[0]
@@ -42,10 +48,12 @@ class GraphHandler(object):
             if (gradientFlag):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
 
-    def buildModel(self, optionDict, pipeline=None):
+    def buildModel(self, optionDict, chained=None, pipeline=None):
+        if (chained is not None):
+            chained['placeholder'] = self.chainedPlaceholder
         op = self.predictOperation if self.gradientOp is None else self.gradientOp
         self.model = self.modelType(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
-                                    predictOp=op, pipeline=pipeline,
+                                    predictOp=op, pipeline=pipeline, chainedModel=chained,
                                     derive=True if self.gradientOp is not None else False)
 
     def run(self, data, op=None):
@@ -55,9 +63,19 @@ class GraphHandler(object):
                 op = self.predictOperation
             else:
                 op = self.gradientOp
-        out = self.session.run(op, feed_dict={self.inputPlaceholder: data})
+        if (self.chainedPlaceholder is not None):
+            if (type(data) == tuple):
+                inPut = data[0]
+                chainedInPut = data[1]
+            else:
+                raise Exception("No input for the chained model")
+
+            out = self.session.run(op, feed_dict={self.inputPlaceholder: inPut, self.chainedPlaceholder: chainedInPut})
+        else:
+            out = self.session.run(op, feed_dict={self.inputPlaceholder: data})
         return out
 
     def predict(self, vol, ir, *args):
         self.setSession()
-        self.model.predict(vol, ir, self.session, self.inputPlaceholder, args)
+        result = self.model.predict(vol, ir, self.session, self.inputPlaceholder, args)
+        return result
