@@ -176,7 +176,7 @@ def trainNN(dataHandler, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None
             train_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/train' + timestamp, sess.graph)
             test_writer = tf.summary.FileWriter(OPTIONS.log_dir + '/test' + timestamp, sess.graph)
 
-            ttS = 0
+            ttS = time.time()
             max_steps = OPTIONS.max_steps
             epoch = 0
             while epoch < max_steps:

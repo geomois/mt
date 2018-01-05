@@ -71,7 +71,7 @@ class ConvNet(object):
                         inShape = layer.get_shape().as_list()
                         layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
                         if (chainedValues is not None):
-                            pdb.set_trace()
+                            # pdb.set_trace()
                             layer = tf.concat([layer, chainedValues], axis=1)
                         tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
                     flatcount += 1
