@@ -206,19 +206,21 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                     print("Epoch:", '%06d' % (epoch), "Learning rate", '%06f' % (lrPrint), "loss=",
                           "{:.8f}".format(out), "Elapsed time: %03f" % elapsedTime)
                 if epoch % optionDict['test_frequency'] == 0 and epoch > 0:
-                    if (outPipeline is not None):
-                        print("Transforming testY")
-                        testY = outPipeline.transform(testY)
-                    if (inputPipeline is not None):
-                        print("Transforming testX")
-                        testX = inputPipeline.transform(testX)
+                    if (epoch == OPTIONS.test_frequency):
+                        if (outPipeline is not None):
+                            print("Transforming testY")
+                            testY = outPipeline.transform(testY)
+                        if (inputPipeline is not None):
+                            print("Transforming testX")
+                            testX = inputPipeline.transform(testX)
 
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
                         cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
                         chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
                                                                chained_test_x.shape)
-
+                        if (inputPipeline is not None):
+                            chainedInput = inputPipeline.transform(chainedInput)
                         out, merged_sum = sess.run([loss, mergedSummaries],
                                                    feed_dict={x_pl: testX, y_pl: testY, chained_pl: chainedInput})
                     else:
@@ -264,9 +266,9 @@ def setupChainedModel(chainedModelDict, useDataHandler=False):
         dh = setupDataHandler(chainedModelDict['options'], allowPredictiveTransformation=False)
     gradFlag = chainedModelDict['options']['with_gradient']
     gh = setupNetwork(chainedModelDict['options'], gradientFlag=gradFlag)
-    if (optionDict['chained_pipeline'] is not None):  # keep OPTIONS not chainedModel['options']
-        pipelineList = cu.loadSavedScaler(optionDict['chained_pipeline'])
-        gh.model.setPipelineList(pipelineList)
+    if (chainedModelDict['options']['input_pipeline'] != ""):
+        pipelineList = cu.loadSavedScaler(chainedModelDict['options']['input_pipeline'])
+        gh.model.setInputPipelineList(pipelineList)
     chainedModelDict['model'] = gh
     return dh, chainedModelDict
 
@@ -452,6 +454,8 @@ def loadChained(options):
     if (options['chained_model'] is not None):
         fName, directory = cu.splitFileName(options['chained_model'])
         chainedOptions = cu.load_obj(directory + '/options.pkl')
+        if (options['chained_pipeline'] != ""):
+            chainedOptions['input_pipeline'] = options['chained_pipeline']
         # DO NOT CONFUSE, chained['placeholder'] keeps the reference to the placeholder of the
         # forward chained network i.e. the output of chained['model'] network
         # and is delegated in this dictionary while building the new network (in new network's graph).
@@ -532,7 +536,7 @@ def main(_):
             chained = loadChained(optionDict)
             _, chained = setupChainedModel(chained)
             gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
-            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] is not None):
+            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] != ""):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                 gh.model.setPipelineList(pipelineList)
 

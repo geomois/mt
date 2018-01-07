@@ -186,7 +186,7 @@ class ConvNet(object):
     def setInputPipelineList(self, plist):
         self.inputPipelineList = plist
 
-    def getCurrentPipeline(self, index, ppList):
+    def getCurrentPipeline(self, index):
         if (len(self.pipelineList) > 1):
             self.pipeline = self.pipelineList[index]
         return self.pipeline
@@ -260,8 +260,8 @@ class ConvNet(object):
         chained_pl = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
-            if (len(self.pipelineList) or self.pipeline is not None):
-                chainedOutput = self.getCurrentInputPipeline(0).transform(chainedOutput)
+            # if (len(self.pipelineList) > 0 or self.inputPipeline is not None):
+            #     chainedOutput = self.getCurrentInputPipeline(0).transform(chainedOutput)
             chained_pl = self.chainedModel['placeholder']
 
         totalDepth = self.volChannels + self.irChannels
