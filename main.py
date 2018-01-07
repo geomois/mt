@@ -458,7 +458,7 @@ def loadChained(options):
             chainedOptions['input_pipeline'] = options['chained_pipeline']
         # DO NOT CONFUSE, chained['placeholder'] keeps the reference to the placeholder of the
         # forward chained network i.e. the output of chained['model'] network
-        # and is delegated in this dictionary while building the new network (in new network's graph).
+        # and is delegated in this dictionary when building the new network (in new network's graph).
         # 'model' key is expected to carry an GraphHandler item of the network
         chained_pl = tf.placeholder(tf.float32, shape=chainedOptions['output_dims'], name="chainedx_pl")
         # When loading models chained_pl MUST be the reference to the placeholder loaded in the "chained graph"
@@ -545,9 +545,9 @@ def main(_):
                                                           skip=optionDict['skip'], plot_results=False,
                                                           fullTest=optionDict['full_test'])
 
-            np.save(optionDict['checkpoint_dir'] + modelName + "Values.npy", values)
-            np.save(optionDict['checkpoint_dir'] + modelName + "Vals.npy", vals)
-            np.save(optionDict['checkpoint_dir'] + modelName + "Params.npy", params)
+            np.save(optionDict['checkpoint_dir'] + modelName + "/Values.npy", values)
+            np.save(optionDict['checkpoint_dir'] + modelName + "/Vals.npy", vals)
+            np.save(optionDict['checkpoint_dir'] + modelName + "/Params.npy", params)
 
 
 if __name__ == '__main__':
