@@ -289,9 +289,13 @@ class ConvNet(object):
         if (self.derive):
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
-            if (len(self.pipelineList) or self.pipeline is not None):
-                out = self.applyPipeLine('inverse', out, 'output', useTf=False)
-                # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
+            if (len(self.pipelineList) > 0 or self.pipeline is not None):
+                # pdb.set_trace()
+                if(len(self.pipelineList) == 0):
+                    # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
+                    out = self.pipeline.inverse_transform(np.asarray(out))
+                else:
+                    out = self.applyPipeLine('inverse', out, 'output', useTf=False)
             if (chainedOutput is not None):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))

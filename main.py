@@ -182,6 +182,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             # testY = np.random.random(testY.shape)
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
+
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
@@ -401,7 +402,8 @@ def savePipeline(pipeline, mode):
             pref = 'input_'
         else:
             pref = 'out_'
-        joblib.dump(pipeline, pipelinePath + '/' + pref + "pipeline.pkl", compress=1)
+        pipelinePath = pipelinePath + '/' + pref + "pipeline.pkl"
+        joblib.dump(pipeline, pipelinePath, compress=1)
 
     return pipelinePath
 
