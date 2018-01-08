@@ -246,6 +246,8 @@ class ConvNet(object):
             out = np.average(der, axis=0).reshape((-1, 1))
         else:
             out = np.average(der).reshape((-1, 1))
+        if(out<0):
+            out = np.abs(out)
         # print(der.shape)
         # print(der[len(der) - 1, 0], np.average(der))
         # out = [der[0, 0]]

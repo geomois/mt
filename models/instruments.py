@@ -895,10 +895,7 @@ class SwaptionGen(du.TimeSeriesData):
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
             # self.setupModel(alpha=params[0])
-            if(type(params)!=list):
-                params = [params]
-            if (len(params) == 1):
-                params = [[params[0], 0]]  # shape (1,2)
+            params = [[params[0, 0], 0]]  # shape (1,2)
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)

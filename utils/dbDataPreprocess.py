@@ -335,15 +335,18 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
 #     params = store['/Models/IR/SWO/GBP/Hull_White_analytic_formulae']
 # emp = np.load("001sigmas.npy")
 # first = np.load("firstSigmas.npy")
-# long = np.load("sigmas.npy")
+# long = np.load("147kVolatile_avgSigmas.npy")
 # err = er.as_matrix()
 # errA = []
 # for i in range(err.shape[0]):
 #     errA.append(np.average(np.abs(err[i])))
 # dates = er.index.tolist()
 # ddates = np.asarray(pd.to_datetime(dates[29:]))
+# plt.figure()
+# plt.grid()
 # plt.plot(ddates, errA[29:], label='default QL error')
 # plt.plot(ddates, emp[:, ind], label='0.001 error')
-# plt.plot(ddates, long[:, ind], label='@52.2k error')
+# plt.plot(ddates, long[:, ind], label='@147k error')
 # plt.plot(ddates, first[:, ind], label='@6900k error')
 # plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
+
