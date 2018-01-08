@@ -232,17 +232,17 @@ class ConvNet(object):
         for i in range(x.shape[1]):
             # if (i <= len(self.pipelineList)):
             pp = modeFunc(i)
-            pdb.set_trace()
-            if(tType == 'inverse'):
-                x = pp.inverse_transform(x[:,i])
-            else:
-                x = pp.inverse_transform(x[:, i])
-            # func = self._getTransformationFunction(tType, 'pre', pp)
-            # if (useTf):
-            #     x = self.npToTfFunc(func, x)
+            # if (tType == 'inverse'):
+            #     x[:, i] = pp.inverse_transform(x[:, i].reshape((-1, 1)))[:, 0]
             # else:
-            #     x[:, i] = func(x[:, i])
-            # x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
+            #     x[:, i] = pp.transform(x[:, i].reshape((-1, 1)))[:, 0]
+            func = self._getTransformationFunction(tType, 'pre', pp)
+            if func is not None:
+                if (useTf):
+                    x = self.npToTfFunc(func, x)
+                else:
+                    x[:, i] = func(x[:, i])
+            x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
         return x
 
     def derivationProc(self, out, totalDepth, xShape):
@@ -251,8 +251,6 @@ class ConvNet(object):
             out = np.average(der, axis=0).reshape((-1, 1))
         else:
             out = np.average(der).reshape((-1, 1))
-        if(out<0):
-            out = np.abs(out)
         # print(der.shape)
         # print(der[len(der) - 1, 0], np.average(der))
         # out = [der[0, 0]]
@@ -292,9 +290,8 @@ class ConvNet(object):
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
             if (len(self.pipelineList) or self.pipeline is not None):
-                # out = self.applyPipeLine('inverse', out, 'output', useTf=False)
-                pdb.set_trace()
-                out = self.pipeline.inverse_transform(np.asarray(out).reshape((1,2)))
+                out = self.applyPipeLine('inverse', out, 'output', useTf=False)
+                # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
             if (chainedOutput is not None):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))
