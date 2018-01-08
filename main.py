@@ -512,7 +512,7 @@ def main(_):
     if optionDict['calculate_gradient']:
         gh = setupNetwork(options=optionDict, gradientFlag=True)
         if optionDict['calibrate_sigma']:
-            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] is not None):
+            if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                 gh.model.setInputPipelineList(pipelineList)
 
@@ -541,7 +541,7 @@ def main(_):
             if (chained is not None):
                 _, chained = setupChainedModel(chained)
             gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
-            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] != ""):
+            if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] != ""):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                 gh.model.setInputPipelineList(pipelineList)
 
@@ -670,6 +670,9 @@ if __name__ == '__main__':
         try:
             fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
             optionDict = cu.load_obj(model_dir + '/options.pkl')
+            if (OPTIONS.chained_pipeline != ""):
+                optionDict['input_pipeline'] = OPTIONS.chained_pipeline
+                optionDict['use_input_pipeline'] = True
             optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
@@ -682,14 +685,10 @@ if __name__ == '__main__':
             optionDict['currency'] = OPTIONS.currency
             optionDict['irType'] = OPTIONS.irType
 
-
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))
     else:
         optionDict = vars(OPTIONS)
-
-    pdb.set_trace()
-
     modelName = buildModelName(ps=optionDict['predictiveShape'], cr=optionDict['channel_range'],
                                cm=optionDict['chained_model'], suff=optionDict['suffix'], nn=optionDict['nn_model'],
                                arch=optionDict['architecture'], bw=optionDict['batch_width'],
