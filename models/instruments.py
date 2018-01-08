@@ -895,7 +895,7 @@ class SwaptionGen(du.TimeSeriesData):
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
             # self.setupModel(alpha=params[0])
-            if(type(params)!=list):
+            if (type(params) != list):
                 params = [params]
             if (len(params) == 1):
                 params = [[params[0], 0]]  # shape (1,2)
@@ -934,6 +934,7 @@ class SwaptionGen(du.TimeSeriesData):
         self.set_date(dates[0])
         dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
         # pdb.set_trace()
+        paramsList = np.empty((0, 3))
         for i, date in enumerate(dates):
             if (i < skip):
                 if (i + dataLength - 1 >= skip):
@@ -962,7 +963,12 @@ class SwaptionGen(du.TimeSeriesData):
                 self.model.setParams(ql.Array(params[0]))
             else:
                 self.model.setParams(ql.Array(params.tolist()[0]))
+
             meanErrorPrior, _ = self.__errors()
+            temp = np.asarray(params)
+            temp = np.append(temp[0],meanErrorPrior).reshape((-1, 3))
+            pdb.set_trace()
+            paramsList = np.vstack((paramsList, temp))
             try:
                 objectivePrior = self.model.value(self.model.params(), self.helpers)
             except RuntimeError:
@@ -1041,7 +1047,7 @@ class SwaptionGen(du.TimeSeriesData):
             f2 = fig.add_subplot(212)
             f2.plot(r, vals[:, 1])
             plt.savefig(modelName + '.png')
-        return (dates, values, vals, params)
+        return (dates, values, vals, paramsList)
 
     def calcForward(self, path=None, futureIncrementInDays=180):
         fwCurves = pd.DataFrame(columns=["Date", "FutureDate", "Tenor", "Rate"])

@@ -386,7 +386,6 @@ def buildPipeLine(transform, scaler, fName=None):
             sc = SCALER_DICT[scaler.lower()]()
         else:
             sc = None
-
         pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', sc)])
     else:
         pipeline = joblib.load(fName)
@@ -534,7 +533,8 @@ def main(_):
     if optionDict['compare']:
         with tf.Session(config=getTfConfig()) as sess:
             chained = loadChained(optionDict)
-            _, chained = setupChainedModel(chained)
+            if (chained is not None):
+                _, chained = setupChainedModel(chained)
             gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
             if (optionDict['use_pipeline'] and optionDict['input_pipeline'] != ""):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
@@ -544,10 +544,14 @@ def main(_):
             _, values, vals, params = swo.compare_history(gh, modelName, dataLength=optionDict['batch_width'],
                                                           skip=optionDict['skip'], plot_results=False,
                                                           fullTest=optionDict['full_test'])
-
-            np.save(optionDict['checkpoint_dir'] + modelName + "/Values.npy", values)
-            np.save(optionDict['checkpoint_dir'] + modelName + "/Vals.npy", vals)
-            np.save(optionDict['checkpoint_dir'] + modelName + "/Params.npy", params)
+            try:
+                np.save(optionDict['checkpoint_dir'] + modelName + "/Values.npy", values)
+                np.save(optionDict['checkpoint_dir'] + modelName + "/Vals.npy", vals)
+                np.save(optionDict['checkpoint_dir'] + modelName + "/Params.npy", params)
+            except:
+                np.save("Values.npy", values)
+                np.save("Vals.npy", vals)
+                np.save("Params.npy", params)
 
 
 if __name__ == '__main__':
