@@ -240,6 +240,8 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
+        optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
+        optionDict['pipeline'] = savePipeline(outPipeline, 'out')
         opts = get_options(False, modelDir=checkpointFolder + str(optionDict['max_steps']))
         opts["input_dims"] = (None, 1, testX.shape[2], testX.shape[3])
         if (gradient is not None):
@@ -256,8 +258,6 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
         print(exc_type, fname, exc_tb.tb_lineno)
         print("Exception during training: ", str(e))
         tf.reset_default_graph()
-
-    return inputPipeline, outPipeline
 
 
 def setupChainedModel(chainedModelDict, useDataHandler=False):
@@ -392,6 +392,7 @@ def buildPipeLine(transform, scaler, fName=None):
 
 
 def savePipeline(pipeline, mode):
+    pipelinePath = ""
     if (pipeline is not None):
         pipelinePath = optionDict['checkpoint_dir'] + modelName
         if (not os.path.exists(pipelinePath)):
@@ -401,6 +402,8 @@ def savePipeline(pipeline, mode):
         else:
             pref = 'out_'
         joblib.dump(pipeline, pipelinePath + '/' + pref + "pipeline.pkl", compress=1)
+
+    return pipelinePath
 
 
 def getTfConfig():
@@ -496,10 +499,9 @@ def main(_):
             chained = loadChained(optionDict)
             dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
                                                                                         chainedModel=chained)
-            inputPipeline, outPipeline = trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
-                                                 chainedModel=cnn.chainedModel)
-            savePipeline(inputPipeline, 'in')
-            savePipeline(outPipeline, 'out')
+            trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
+                    chainedModel=cnn.chainedModel)
+
         elif optionDict['nn_model'] == 'lstm':
             trainLSTM(dh)
         else:
