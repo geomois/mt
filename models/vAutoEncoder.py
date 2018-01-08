@@ -5,7 +5,7 @@ import utils.customUtils as cu
 import pdb
 
 
-class ConvNet(object):
+class VariationalAutoEncoder(object):
     def __init__(self, volChannels, irChannels, kernels=[10, 10], depths=[10, 1], poolStrides=[2], fcUnits=[2],
                  poolingLayerFlag=False, architecture=['v', 'f', 'd'],
                  activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],

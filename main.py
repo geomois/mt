@@ -274,9 +274,7 @@ def setupChainedModel(chainedModelDict, useDataHandler=False):
 
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
-    pdb.set_trace()
-    der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX)
-    pdb.set_trace()
+    der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX.shape)
     if (save):
         if (folder is None):
             folder = optionDict['checkpoint_dir'] + modelName + "/"
@@ -508,11 +506,11 @@ def main(_):
             raise ValueError("--train_model argument can be lstm or cnn")
 
     if optionDict['calculate_gradient']:
-        gh, _ = setupNetwork(options=optionDict, gradientFlag=True)
+        gh = setupNetwork(options=optionDict, gradientFlag=True)
         if optionDict['calibrate_sigma']:
-            if (optionDict['use_pipeline'] and optionDict['pipeline'] is not None):
-                pipelineList = cu.loadSavedScaler(optionDict['pipeline'])
-                gh.model.setPipelineList(pipelineList)
+            if (optionDict['use_pipeline'] and optionDict['input_pipeline'] is not None):
+                pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+                gh.model.setInputPipelineList(pipelineList)
 
             swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             if (len(optionDict['channel_range']) > 1):
@@ -526,9 +524,12 @@ def main(_):
         else:
             dh = setupDataHandler(optionDict)
             testX, _ = dh.getTestData()
-            deriv = gh.run(gh.gradientOp, testX)
+            dh.getNextBatch()
+            trainX = dh.trainData['input']
+            inPut = np.vstack((trainX, testX))
+            deriv = gh.run(inPut, gh.gradientOp)
             path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
-            transformDerivatives(deriv, dh, testX, path)
+            transformDerivatives(deriv, dh, inPut, path)
 
     if optionDict['compare']:
         with tf.Session(config=getTfConfig()) as sess:
@@ -538,7 +539,7 @@ def main(_):
             gh = setupNetwork(optionDict, chainedDict=chained, prefix="chained" if (chained is not None) else "")
             if (optionDict['use_pipeline'] and optionDict['input_pipeline'] != ""):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
-                gh.model.setPipelineList(pipelineList)
+                gh.model.setInputPipelineList(pipelineList)
 
             swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             _, values, vals, params = swo.compare_history(gh, modelName, dataLength=optionDict['batch_width'],
