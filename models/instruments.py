@@ -964,7 +964,6 @@ class SwaptionGen(du.TimeSeriesData):
             meanErrorPrior, _ = self.__errors()
             temp = np.asarray(params)
             temp = np.append(temp[0],meanErrorPrior).reshape((-1, 3))
-            pdb.set_trace()
             paramsList = np.vstack((paramsList, temp))
             try:
                 objectivePrior = self.model.value(self.model.params(), self.helpers)

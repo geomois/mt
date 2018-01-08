@@ -688,6 +688,8 @@ if __name__ == '__main__':
     else:
         optionDict = vars(OPTIONS)
 
+    pdb.set_trace()
+
     modelName = buildModelName(ps=optionDict['predictiveShape'], cr=optionDict['channel_range'],
                                cm=optionDict['chained_model'], suff=optionDict['suffix'], nn=optionDict['nn_model'],
                                arch=optionDict['architecture'], bw=optionDict['batch_width'],
