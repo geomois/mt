@@ -69,12 +69,8 @@ class GraphHandler(object):
                 chainedInPut = data[1]
             else:
                 raise Exception("No input for the chained model")
-            if (len(self.model.inputPipelineList) > 0 or self.model.inputPipeline is not None):
-                inPut = self.model.applyPipeLine('transform', inPut, 'input', useTf=False)
             out = self.session.run(op, feed_dict={self.inputPlaceholder: inPut, self.chainedPlaceholder: chainedInPut})
         else:
-            if (len(self.model.inputPipelineList) > 0 or self.model.inputPipeline is not None):
-                data = self.model.applyPipeLine('transform', data, 'input', useTf=False)
             out = self.session.run(op, feed_dict={self.inputPlaceholder: data})
         return out
 

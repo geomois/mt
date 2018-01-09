@@ -282,7 +282,6 @@ class ConvNet(object):
                 x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
 
         if (len(self.inputPipelineList) > 0 or self.inputPipeline is not None):
-            pdb.set_trace()
             x = self.applyPipeLine('transform', x, 'input', useTf=False)
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         if (chainedOutput is not None):
