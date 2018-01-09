@@ -261,8 +261,10 @@ class ConvNet(object):
         return out
 
     def predict(self, vol, ir, sess, x_pl, *args):
-        chainedOutput = None
-        chained_pl = None
+        # out = np.asarray([[0.01]])
+        # return out
+        # chainedOutput = None
+        chained_pl = chainedOutput = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
             # if (len(self.pipelineList) > 0 or self.inputPipeline is not None):
@@ -291,7 +293,7 @@ class ConvNet(object):
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
             if (len(self.pipelineList) > 0 or self.pipeline is not None):
-                if(len(self.pipelineList) == 0):
+                if (len(self.pipelineList) == 0):
                     # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
                     out = self.pipeline.inverse_transform(np.asarray(out))
                 else:

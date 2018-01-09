@@ -92,7 +92,8 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            temp.append(np.abs(np.average(derivative[j])))
+            # temp.append(np.abs(np.average(derivative[j])))
+            temp.append(np.average(np.abs(derivative[j])))
         der = np.vstack((der, temp))
     return der
 
@@ -143,19 +144,20 @@ def load_obj(name):
         return pickle.load(f)
 
 
-def prepareStandardizedData(mode='ir',scaleParams=False,dataFileName='data/toyData/AH_vol.csv', targetDataPath=None, targetDataMode=None,
+def prepareStandardizedData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_vol.csv', targetDataPath=None,
+                            targetDataMode=None,
                             specialFilePrefix=None, volDepth=156, irDepth=44, width=30):
     # argetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
     # targetDataMode = 'deltair'
     # specialFilePrefix = '_perTermSTANDARD_pfw365_'
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
-                       useDataPointers=False, save=True, specialFilePrefix=specialFilePrefix,
-                       targetDataPath=targetDataPath, targetDataMode=targetDataMode)
+                        useDataPointers=False, save=True, specialFilePrefix=specialFilePrefix,
+                        targetDataPath=targetDataPath, targetDataMode=targetDataMode)
     dd.readData(dd.dataFileName)
     sc = StandardScaler()
-    if(mode.lower()=='ir'):
+    if (mode.lower() == 'ir'):
         array = dd.ir
-    elif(mode.lower()=='vol'):
+    elif (mode.lower() == 'vol'):
         array = dd.volatilities
 
     temp = np.empty((0, array.shape[1]))
