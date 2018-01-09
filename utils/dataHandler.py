@@ -245,8 +245,8 @@ class DataHandler(object):
                     self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
-                    suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
-                        self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+                    suffix = 'train' + str(d.specialPrefix) + str(d.batchSize) + "_w" + str(
+                        d.segmentWidth) + '_' + str(d.volDepth) + '_' + str(d.irDepth)
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
