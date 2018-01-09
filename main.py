@@ -218,8 +218,10 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
                         cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
+                        pdb.set_trace()
                         chainedInput = gh.model.derivationProc(cOut, gh.model.irChannels + gh.model.volChannels,
                                                                chained_test_x.shape)
+                        pdb.set_trace()
                         if (inputPipeline is not None):
                             chainedInput = inputPipeline.transform(chainedInput)
                         out, merged_sum = sess.run([loss, mergedSummaries],
