@@ -325,7 +325,7 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
     # df[df.someColumn.isin(someList)] #keep data that are also in somelist
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
 
-#Plot errors
+# Plot errors
 # import numpy as np
 # import matplotlib.pyplot as plt
 # import pandas as pd
@@ -350,3 +350,16 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
 # plt.plot(ddates, first[:, ind], label='@6900k error')
 # plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
 
+
+# import pandas as pd
+# import numpy as np
+# eun = pd.read_csv("data/eoniaFullFilled100.csv",header = 0)
+# term = eun.Term.as_matrix()
+# eur = eun.drop("Term",axis=1)
+# eur.dropna(axis=0,how='any')
+# dat = pd.DataFrame(columns=['Date', "Term", "Value"])
+# for col in eur.columns:
+#     datesList = [col for y in range(len(term))]
+#     dd = np.asarray([pd.to_datetime(datesList), term, eur[col]]).T
+#     temp = pd.DataFrame(dd, columns=['Date', "Term", "Value"])
+#     dat = dat.append(temp)

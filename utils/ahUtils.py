@@ -1,133 +1,15 @@
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.utils import check_array
 import numpy as np
 import QuantLib as ql
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.covariance import empirical_covariance
-from sklearn.pipeline import Pipeline
 from scipy.linalg import sqrtm
 import pandas as pd
+import utils.data_utils as du
 
 seed = 1027
-class FunctionTransformerWithInverse(BaseEstimator, TransformerMixin):
-    def __init__(self, func=None, inv_func=None, validate=False,
-                 accept_sparse=False, pass_y=False):
-        self.validate = validate
-        self.accept_sparse = accept_sparse
-        self.pass_y = pass_y
-        self.func = func
-        self.inv_func = inv_func
 
-    def fit(self, X, y=None):
-        if self.validate:
-            check_array(X, self.accept_sparse)
-        return self
-
-    def transform(self, X, y=None):
-        if self.validate:
-            X = check_array(X, self.accept_sparse)
-        if self.func is None:
-            return X
-        return self.func(X)
-
-    def inverse_transform(self, X, y=None):
-        if self.validate:
-            X = check_array(X, self.accept_sparse)
-        if self.inv_func is None:
-            return X
-        return self.inv_func(X)
-
-
-def retrieve_swo_train_set(file_name, transform=True, func=None, inv_func=None,
-                           valid_size=0.2, test_size=0.2, total_size=1.0,
-                           scaler=MinMaxScaler(), concatenated=True):
-    # Randomly selects points from dataset
-    # To make it reproducible
-    np.random.seed(seed)
-
-    x_swo = np.load(file_name + '_x_swo.npy')
-    x_ir = np.load(file_name + '_x_ir.npy')
-    y = np.load(file_name + '_y.npy')
-
-    train_size = total_size - valid_size - test_size
-    assert (train_size > 0. and train_size <= 1.)
-    assert (valid_size >= 0. and valid_size <= 1.)
-    assert (test_size >= 0. and test_size <= 1.)
-    total_sample = y.shape[0]
-    print("Total sample: %d" % total_sample)
-    train_sample = int(np.ceil(total_sample * train_size))
-    assert (train_sample > 0)
-    valid_sample = int(np.floor(total_sample * valid_size))
-    test_sample = int(np.floor(total_sample * test_size))
-    total_sample -= train_sample
-    if total_sample - valid_sample < 0:
-        valid_sample = 0
-        test_sample = 0
-    else:
-        total_sample -= valid_sample
-        if total_sample - test_sample < 0:
-            test_sample = 0
-
-    index = np.arange(y.shape[0])
-    np.random.shuffle(index)
-    x_swo_train = x_swo[index[:train_sample]]
-    x_ir_train = x_ir[index[:train_sample]]
-    if concatenated:
-        x_train = np.concatenate((x_swo_train, x_ir_train), axis=1)
-    else:
-        x_train = (x_swo_train, x_ir_train)
-    y_train = y[index[:train_sample]]
-
-    if valid_sample == 0:
-        x_valid = None
-        y_valid = None
-    else:
-        x_swo_valid = x_swo[index[train_sample:train_sample + valid_sample]]
-        x_ir_valid = x_ir[index[train_sample:train_sample + valid_sample]]
-        if concatenated:
-            x_valid = np.concatenate((x_swo_valid, x_ir_valid), axis=1)
-        else:
-            x_valid = (x_swo_valid, x_ir_valid)
-        y_valid = y[index[train_sample:train_sample + valid_sample]]
-
-    if test_sample == 0:
-        x_test = None
-        y_test = None
-    else:
-        x_swo_test = x_swo[index[train_sample + valid_sample:train_sample + valid_sample + test_sample]]
-        x_ir_test = x_ir[index[train_sample + valid_sample:train_sample + valid_sample + test_sample]]
-        if concatenated:
-            x_test = np.concatenate((x_swo_test, x_ir_test), axis=1)
-        else:
-            x_test = (x_swo_test, x_ir_test)
-        y_test = y[index[train_sample + valid_sample:train_sample + valid_sample + test_sample]]
-
-    if transform:
-        if func is not None or inv_func is not None:
-            funcTrm = FunctionTransformerWithInverse(func=func,
-                                                     inv_func=inv_func)
-            pipeline = Pipeline([('funcTrm', funcTrm), ('scaler', scaler)])
-        else:
-            pipeline = scaler
-
-        y_train = pipeline.fit_transform(y_train)
-        if y_valid is not None:
-            y_valid = pipeline.transform(y_valid)
-        if y_test is not None:
-            y_test = pipeline.transform(y_test)
-    else:
-        print('No transform requested')
-        pipeline = None
-
-    return {'x_train': x_train,
-            'y_train': y_train,
-            'x_valid': x_valid,
-            'y_valid': y_valid,
-            'x_test': x_test,
-            'y_test': y_test,
-            'transform': pipeline}
-
-
+h5_model_node = 'Models'
+h5_error_node = 'Errors'
 '''
 Sampling functions
 '''
@@ -147,7 +29,8 @@ def random_normal_draw(history, nb_samples, **kwargs):
     scaler = StandardScaler()
     scaler.fit(history)
     scaled = scaler.transform(history)
-    sqrt_cov = sqrtm(empirical_covariance(scaled)).real
+    # sqrt_cov = sqrtm(empirical_covariance(scaled)).real
+    sqrt_cov = float(sqrtm(empirical_covariance(scaled)))
 
     # Draw correlated random variables
     # draws are generated transposed for convenience of the dot operation
@@ -248,15 +131,6 @@ g2_local = {'name': 'G2++_local',
             'sampler': random_normal_draw}
 
 
-# g2_vae = {'name' : 'G2++',
-#       'model' : ql.G2,
-#       'engine' : lambda model, _: ql.G2SwaptionEngine(model, 6.0, 16),
-#       'transformation' : g2_transformation,
-#       'inverse_transformation' : g2_inverse_transformation,
-#       'method': g2_method(),
-#       'sampler': vae.sample_from_generator,
-#       'file_name': 'g2pp_vae'}
-
 def local_hw_map(swo, date, pointA, pointB, off_x=0.1, off_y=0.1,
                  low_x=1e-8, low_y=1e-8, nb_points=20):
     assert (len(pointA) == 2 and len(pointB) == 2)
@@ -297,3 +171,69 @@ def local_hw_map(swo, date, pointA, pointB, off_x=0.1, off_y=0.1,
             result[i, j] = swo.model.value(swo.model.params(), swo.helpers)
 
     return (xx, yy, result)
+
+
+def to_tenor(index, irType):
+    frequency = index.tenor().frequency()
+    if (irType.lower() == 'ois'):
+        return 'OIS'
+    elif (irType.lower() == 'euribor'):
+        return 'E%dM' % index.tenor().length()
+    elif (irType.lower() == 'libor'):
+        return 'L%dM' % index.tenor().length()
+
+
+def format_vol(v, digits=2):
+    fformat = '%%.%df %%%%' % digits
+    return fformat % (v * 100)
+
+
+def format_price(p, digits=2):
+    fformat = '%%.%df' % digits
+    return fformat % p
+
+
+def proper_name(name):
+    name = name.replace(" ", "_")
+    name = name.replace("(", "")
+    name = name.replace(")", "")
+    name = name.replace(",", "_")
+    name = name.replace("-", "_")
+    name = name.replace("+", "p")
+    return name
+
+
+def flatten_name(name, node=h5_model_node, risk_factor='IR'):
+    name = proper_name(name)
+    return node + '/' + risk_factor + '/' + name
+
+
+def postfix(size, with_error, history_start, history_end, history_part):
+    if with_error:
+        file_name = '_adj_err'
+    else:
+        file_name = '_unadj_err'
+    file_name += '_s' + str(size)
+    if history_start is not None:
+        file_name += '_' + str(history_start) + '-' + str(history_end)
+    else:
+        file_name += '_' + str(history_part)
+
+    return file_name
+
+
+def sample_file_name(swo, size, with_error, history_start, history_end, history_part):
+    file_name = flatten_name(swo.name).lower().replace('/', '_')
+    file_name = du.data_dir + file_name
+
+    if with_error:
+        file_name += '_adj_err'
+    else:
+        file_name += '_unadj_err'
+    file_name += '_s' + str(size)
+    if history_start is not None:
+        file_name += '_' + str(history_start) + '-' + str(history_end)
+    else:
+        file_name += '_' + str(history_part)
+
+    return file_name

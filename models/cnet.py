@@ -177,9 +177,6 @@ class ConvNet(object):
 
         return loss
 
-    def calibrationLoss(self, date):
-        pass
-
     def setPipelineList(self, plist):
         self.pipelineList = plist
 

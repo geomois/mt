@@ -7,8 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import re, pickle, os, pdb
-#import utils.dataHandler as dh
-from utils.ahUtils import FunctionTransformerWithInverse
+from utils.FunctionTransformer import FunctionTransformerWithInverse
 
 optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency", "gpu_memory_fraction", "suffix",
               "decay_steps", "weight_reg_strength", "irFileName", "model_dir", "historyStart", "test_frequency",
@@ -92,8 +91,8 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            # temp.append(np.abs(np.average(derivative[j])))
-            temp.append(np.average(np.abs(derivative[j])))
+            temp.append(np.abs(np.average(derivative[j])))
+            # temp.append(np.average(np.abs(derivative[j])))
         der = np.vstack((der, temp))
     return der
 
@@ -144,30 +143,36 @@ def load_obj(name):
         return pickle.load(f)
 
 
-def prepareStandardizedData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_vol.csv', targetDataPath=None,
-                            targetDataMode=None,
-                            specialFilePrefix=None, volDepth=156, irDepth=44, width=30):
+def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_vol.csv', targetDataPath=None,
+                    targetDataMode=None, specialFilePrefix=None, volDepth=156, irDepth=44, width=30):
+    import utils.dataHandler as dh
     # argetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
     # targetDataMode = 'deltair'
     # specialFilePrefix = '_perTermSTANDARD_pfw365_'
+    # example:
+    # import utils.customUtils as cu
+    # cu.prepareProcData(scaleParams=False, dataFileName='data/ownData/AH_eonia2005_ir.csv', \
+    # targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair', \
+    # specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
                         useDataPointers=False, save=True, specialFilePrefix=specialFilePrefix,
                         targetDataPath=targetDataPath, targetDataMode=targetDataMode)
-    dd.readData(dd.dataFileName)
-    sc = StandardScaler()
-    if (mode.lower() == 'ir'):
-        array = dd.ir
-    elif (mode.lower() == 'vol'):
-        array = dd.volatilities
+    if (scaleParams):
+        dd.readData(dd.dataFileName)
+        sc = StandardScaler()
+        if (mode.lower() == 'ir'):
+            array = dd.ir
+        elif (mode.lower() == 'vol'):
+            array = dd.volatilities
 
-    temp = np.empty((0, array.shape[1]))
-    for i in range(array.shape[0]):
-        scaled = sc.fit_transform(array[i, :].reshape((-1, 1)))
-        suffix = 'exports/perTermScaler' + str(i) + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(
-            dd.segmentWidth) + '_' + str(dd.volDepth) + '_' + str(dd.irDepth)
-        joblib.dump(sc, suffix + ".pkl", compress=1)
-        temp = np.vstack((temp, scaled[:, 0]))
-    array = temp
+        temp = np.empty((0, array.shape[1]))
+        for i in range(array.shape[0]):
+            scaled = sc.fit_transform(array[i, :].reshape((-1, 1)))
+            suffix = 'exports/perTermScaler' + str(i) + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(
+                dd.segmentWidth) + '_' + str(dd.volDepth) + '_' + str(dd.irDepth)
+            joblib.dump(sc, suffix + ".pkl", compress=1)
+            temp = np.vstack((temp, scaled[:, 0]))
+        array = temp
     _ = dd.getTestData()
     _ = dd.getNextBatch()
     suffix = 'train' + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(dd.segmentWidth) + '_' + str(

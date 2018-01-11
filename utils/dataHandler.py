@@ -1,7 +1,7 @@
 import numpy as np
 import re
 import utils.dbDataPreprocess as dbc
-import models.instruments as inst
+import models.IRCurve as inst
 import os.path
 import pdb
 import datetime as dt
@@ -187,7 +187,6 @@ class DataHandler(object):
             if (inputPipeline is not None):
                 self.trainData["input"] = outPipeline.fit_transform(self.trainData["input"])
 
-
         # if (self.predictive is not None and not self.transformed['train']):
         #     self._feedTransform('train')
         # if (self.delegatedFromFile and pipeline.steps[1][1] is not None):
@@ -245,8 +244,8 @@ class DataHandler(object):
                     self.trainData["input"] = np.vstack((self.trainData["input"], inPut))
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
-                    suffix = 'train' + str(d.specialPrefix) + str(d.batchSize) + "_w" + str(
-                        d.segmentWidth) + '_' + str(d.volDepth) + '_' + str(d.irDepth)
+                    suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
+                        self.segmentWiself.h) + '_' + str(self.volself.pth) + '_' + str(self.irself.pth)
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
@@ -305,7 +304,10 @@ class DataHandler(object):
                 for j in range(self.channelStart, self.channelEnd, outDepth):
                     colEnd = j + outDepth
                     # rowEnd = i + window + outWidth TODO:implement future movement
-                    targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
+
+                    # data is aligned to have -1 datapoint
+                    targetArray = np.vstack((targetArray, output[i, j:colEnd].reshape(-1, outDepth)))
+                    # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
             targetDict['output'] = targetArray
         else:
             targetDict['output'] = self._reshapeToPredict(
@@ -483,7 +485,12 @@ class DataHandler(object):
         if (pointers):
             target = endWidthPosition - 1
         else:
-            target = self.target[:, endWidthPosition - 1]
+            if (endWidthPosition - 1 >= self.target.shape[1]):
+                pos = self.target.shape[1] - 1
+            else:
+                pos = endWidthPosition - 1
+
+            target = self.target[:, pos]
 
         self.prevWidthStopPosition = endWidthPosition
         self.prevWidthStartPosition = startWidthPosition

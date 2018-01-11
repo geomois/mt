@@ -1,8 +1,9 @@
-import argparse, os, time, pdb, sys
+import argparse, os, time, sys, pdb
 import tensorflow as tf
 from graphHandler import GraphHandler
 from models.cnet import ConvNet
-import models.instruments as inst
+import models.SwaptionGenerator as swg
+import models.IRCurve as irc
 from utils.ahUtils import *
 from utils.dataHandler import DataHandler
 import datetime as dt
@@ -10,7 +11,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import utils.customUtils as cu
-import utils.ahUtils as au
+from utils.FunctionTransformer import FunctionTransformerWithInverse
 
 # region NNDefaultConstants
 LEARNING_RATE_DEFAULT = 2e-3
@@ -126,10 +127,7 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
 
     pred = cnn.inference(x_pl, chained_pl)
     tf.add_to_collection("predict", pred)
-    if (optionDict['use_calibration_loss']):
-        loss = cnn.calibrationLoss(pred)
-    else:
-        loss = cnn.loss(pred, y_pl)
+    loss = cnn.loss(pred, y_pl)
 
     return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
 
@@ -305,7 +303,7 @@ def setupDataHandler(options, allowPredictiveTransformation=True):
     dataFileName = options['volFileName'] if options['volFileName'] is not None else options['irFileName']
     dataHandler = DataHandler(dataFileName=dataFileName, batchSize=options['batch_size'], width=options['batch_width'],
                               volDepth=int(options['data_vol_depth']), irDepth=int(options['data_ir_depth']),
-                              useDataPointers=options['use_calibration_loss'], save=options['saveProcessedData'],
+                              useDataPointers=False, save=options['saveProcessedData'],
                               specialFilePrefix=specialFilePrefix, predictiveShape=predictiveShape,
                               targetDataMode=options['target'])
     if (options['processedData']):
@@ -377,10 +375,10 @@ def buildPipeLine(transform, scaler, fName=None):
     if (fName is None):
         irModel = getIrModel()
         if (transform):
-            transformFunc = au.FunctionTransformerWithInverse(func=irModel["transformation"],
-                                                              inv_func=irModel["inverse_transformation"])
+            transformFunc = FunctionTransformerWithInverse(func=irModel["transformation"],
+                                                           inv_func=irModel["inverse_transformation"])
         else:
-            transformFunc = au.FunctionTransformerWithInverse(func=None, inv_func=None)
+            transformFunc = FunctionTransformerWithInverse(func=None, inv_func=None)
 
         if (scaler.lower() in SCALER_DICT):
             sc = SCALER_DICT[scaler.lower()]()
@@ -481,20 +479,23 @@ def main(_):
     swo = None
     if (optionDict['weight_reg_strength'] is None):
         optionDict['weight_reg_strength'] = 0.0
-    inst.setDataFileName(optionDict['data_dir'])
-    if (optionDict['calibrate'] or optionDict['use_calibration_loss'] or optionDict['exportForwardRates']):
-        swo = inst.get_swaptiongen(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
-                                   volFileName=optionDict['volFileName'], irFileName=optionDict['irFileName'])
-        if optionDict['calibrate']:
-            swo.calibrate_history(start=int(optionDict['historyStart']), end=int(optionDict['historyEnd']))
+    swg.setDataFileName(optionDict['data_dir'])
 
-        if optionDict['exportForwardRates']:
-            exportPath = './exports/' + optionDict['suffix'] + 'fwCurves' + "_fDays" + str(
-                optionDict['futureIncrement']) + ".csv"
-            if (not os.path.isfile(exportPath)):
-                swo.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
-            else:
-                print("File already exists")
+    if optionDict['calibrate']:
+        swo = swg.get_swaptiongen(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
+                                  volFileName=optionDict['volFileName'], irFileName=optionDict['irFileName'])
+        swo.calibrate_history(start=int(optionDict['historyStart']), end=int(optionDict['historyEnd']))
+
+    if optionDict['exportForwardRates']:
+        exportPath = './exports/' + optionDict['suffix'] + 'fwCurves' + "_fDays" + str(
+            optionDict['futureIncrement']) + ".csv"
+        if (not os.path.isfile(exportPath)):
+            ir = irc.getIRCurves(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
+                                 irFileName=optionDict['irFileName'])
+            # dateInDays = optionDict['irType'] if optionDict['dayDict']
+            ir.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
+        else:
+            print("File already exists")
 
     if optionDict['is_train']:
         dh = setupDataHandler(optionDict)
@@ -518,7 +519,7 @@ def main(_):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                 gh.model.setInputPipelineList(pipelineList)
 
-            swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             if (len(optionDict['channel_range']) > 1):
                 channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
             else:
@@ -547,7 +548,7 @@ def main(_):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                 gh.model.setInputPipelineList(pipelineList)
 
-            swo = inst.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             _, values, vals, params = swo.compare_history(gh, modelName, dataLength=optionDict['batch_width'],
                                                           skip=optionDict['skip'], plot_results=False,
                                                           fullTest=optionDict['full_test'])
@@ -639,7 +640,6 @@ if __name__ == '__main__':
     parser.add_argument('--decay_staircase', action='store_true', help='Decay rate')
     parser.add_argument('--gpu_memory_fraction', type=float, default=GPU_MEMORY_FRACTION,
                         help='Percentage of gpu memory to use')
-    parser.add_argument('-cl', '--use_calibration_loss', action='store_true', help='Use nn calibration loss')
     parser.add_argument('-ps', '--predictiveShape', nargs='+', default=None,
                         help='Comma separated list of numbers for the input and output depth of the nn')
     parser.add_argument('-cr', '--channel_range', nargs='+', default=['44'],
@@ -678,7 +678,6 @@ if __name__ == '__main__':
             optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
-            optionDict['use_calibration_loss'] = OPTIONS.use_calibration_loss
             optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
             optionDict['is_train'] = OPTIONS.is_train
             optionDict['compare'] = OPTIONS.compare
