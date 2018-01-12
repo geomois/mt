@@ -86,24 +86,27 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     else:
         derivative = derivative.reshape((-1, xShape[2]))
     datapoints = int(derivative.shape[0] / step)
-    der = np.empty((0, datapoints))
+    der = np.empty((step, datapoints))
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            temp.append(np.abs(np.average(derivative[j])))
-            # temp.append(np.average(derivative[j]))
+            # temp.append(np.abs(np.average(derivative[j])))
+            temp.append(np.average(derivative[j]))
             # temp.append(np.average(np.abs(derivative[j])))
-        der = np.vstack((der, temp))
+        # der = np.vstack((der, temp))
+        der[i] = np.abs(temp)
     return der
 
 
 def reshapeMultiple(array, depth, start, end):
-    o = np.empty((0, 1, array.shape[2], depth))
+    cc = []
+    o = np.empty((array.shape[0] * array.shape[3], 1, array.shape[2], depth))
     for i in range(array.shape[0]):
         for j in range(start, end, depth):
             colEnd = j + depth
             temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
-            o = np.vstack((o, temp))
+            cc.append((i * array.shape[3]) + j)
+            o[(i * array.shape[3]) + j] = temp
     return o
 
 

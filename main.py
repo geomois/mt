@@ -5,7 +5,7 @@ from models.cnet import ConvNet
 import models.SwaptionGenerator as swg
 import models.IRCurve as irc
 from utils.ahUtils import *
-from utils.dataHandler import DataHandler
+from utils.dataHandler import *
 import datetime as dt
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -277,32 +277,34 @@ def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True)
     der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX.shape)
     if (save):
         if (folder is None):
-            folder = optionDict['checkpoint_dir'] + modelName + "/"
-        pdb.set_trace()
-        np.save(folder + "testDerivatives.npy", der)
+            folder = optionDict['checkpoint_dir'] + modelName
+        np.save(folder + "/" + "testDerivatives.npy", der)
 
     return der
 
 
-def setupDataHandler(options, allowPredictiveTransformation=True):
+def setupDataHandler(options, allowPredictiveTransformation=True, testPercentage=DEFAULT_TEST_DATA_PERCENTAGE):
     # to avoid cutting the data for training set allowPredictiveTransformation False (e.g. chained model)
     if (type(options) == argparse.Namespace):
         options = vars(options)
-    if (options['predictiveShape'] is not None and allowPredictiveTransformation):
+    if (options['predictiveShape'] is not None):
         if (options['volFileName'] is not None):
             mode = 'vol'
         elif (options['irFileName'] is not None):
             mode = 'ir'
         else:
             raise ValueError('File name is not correct')
-        predictiveShape = (mode, options['predictiveShape'], options['channel_range'])
+
+        predictiveShape = (mode, options['predictiveShape'], options['channel_range'], allowPredictiveTransformation)
         specialFilePrefix = "_M" + mode + ''.join(options['predictiveShape'])
     else:
         predictiveShape = None
         specialFilePrefix = ''
-
+    if ('testDataPercentage' not in options):
+        options['testDataPercentage'] = testPercentage
     dataFileName = options['volFileName'] if options['volFileName'] is not None else options['irFileName']
     dataHandler = DataHandler(dataFileName=dataFileName, batchSize=options['batch_size'], width=options['batch_width'],
+                              testDataPercentage=options['testDataPercentage'],
                               volDepth=int(options['data_vol_depth']), irDepth=int(options['data_ir_depth']),
                               useDataPointers=False, save=options['saveProcessedData'],
                               specialFilePrefix=specialFilePrefix, predictiveShape=predictiveShape,
@@ -529,15 +531,15 @@ def main(_):
             folder = optionDict['checkpoint_dir'] + modelName + "/"
             np.save(folder + "sigmas.npy", sigmas)
         else:
-            dh = setupDataHandler(optionDict)
+            dh = setupDataHandler(optionDict, allowPredictiveTransformation=False, testPercentage=0)
             testX, _ = dh.getTestData()
+            testX = testX[:, :, :, :optionDict['conv_ir_depth']]
             dh.getNextBatch()
-            trainX = dh.trainData['input']
+            trainX = dh.trainData['input'][:, :, :, :optionDict['conv_ir_depth']]
             inPut = np.vstack((trainX, testX))
             deriv = gh.run(inPut, gh.gradientOp)
             path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
-            pdb.set_trace()
-            return transformDerivatives(deriv, dh, inPut, path)
+            transformDerivatives(deriv, dh, inPut, path)
 
     if optionDict['compare']:
         with tf.Session(config=getTfConfig()) as sess:

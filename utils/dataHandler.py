@@ -1,15 +1,17 @@
 import numpy as np
 import re
 import utils.dbDataPreprocess as dbc
-import models.IRCurve as inst
+import models.SwaptionGenerator as inst
 import os.path
 import pdb
 import datetime as dt
 
+DEFAULT_TEST_DATA_PERCENTAGE = 0.2
+
 
 class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
-                 , testDataPercentage=0.2, batchSize=50, width=50, volDepth=156,
+                 , testDataPercentage=DEFAULT_TEST_DATA_PERCENTAGE, batchSize=50, width=50, volDepth=156,
                  irDepth=44, sliding=True, useDataPointers=False, randomSplit=False, datePointer=False, save=False,
                  specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None):
         target = 'params' if targetDataMode is None else targetDataMode
@@ -276,6 +278,9 @@ class DataHandler(object):
         mode = self.predictive[0]
         inWidth = int(self.predictive[1][0])
         outWidth = int(self.predictive[1][1])
+        transformFlag = True
+        if (len(self.predictive) > 2):
+            transformFlag = self.predictive[3]
         if (len(self.predictive[2])) > 1:
             channelRange = [int(self.predictive[2][0]), int(self.predictive[2][1])]
         else:
@@ -296,26 +301,27 @@ class DataHandler(object):
             inWidth = targetShape[2]
         # endregion unravelling input
 
-        if (self.targetName.lower() == 'deltair'):
-            output = targetDict['output']
-            window = inWidth
-            targetArray = np.empty((0, outDepth))
-            for i in range(0, targetShape[0] - window):
-                for j in range(self.channelStart, self.channelEnd, outDepth):
-                    colEnd = j + outDepth
-                    # rowEnd = i + window + outWidth TODO:implement future movement
+        if (transformFlag):
+            if (self.targetName.lower() == 'deltair'):
+                output = targetDict['output']
+                window = inWidth
+                targetArray = np.empty((0, outDepth))
+                for i in range(0, targetShape[0] - window):
+                    for j in range(self.channelStart, self.channelEnd, outDepth):
+                        colEnd = j + outDepth
+                        # rowEnd = i + window + outWidth TODO:implement future movement
 
-                    # data is aligned to have -1 datapoint
-                    targetArray = np.vstack((targetArray, output[i, j:colEnd].reshape(-1, outDepth)))
-                    # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
-            targetDict['output'] = targetArray
-        else:
-            targetDict['output'] = self._reshapeToPredict(
-                np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd])).reshape(
-                (-1, 1))  # skip first
-        inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, :]  # skip last
-        targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
-        self.transformed[data] = True
+                        # data is aligned to have -1 datapoint
+                        targetArray = np.vstack((targetArray, output[i, j:colEnd].reshape(-1, outDepth)))
+                        # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
+                targetDict['output'] = targetArray
+            else:
+                targetDict['output'] = self._reshapeToPredict(
+                    np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd])).reshape(
+                    (-1, 1))  # skip first
+            inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, :]  # skip last
+            targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
+            self.transformed[data] = True
 
     def _reshapeToPredict(self, array):  # CHECK
         o = np.empty((0, 1, array.shape[2], 1))
@@ -325,12 +331,14 @@ class DataHandler(object):
         return o
 
     def reshapeMultiple(self, array, depth):  # CHECK
-        o = np.empty((0, 1, array.shape[2], depth))
+        # o = np.empty((0, 1, array.shape[2], depth))
+        o = np.empty((array.shape[0] * array.shape[3], 1, array.shape[2], depth))
         for i in range(array.shape[0]):
             for j in range(self.channelStart, self.channelEnd, depth):
                 colEnd = j + depth
                 temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
-                o = np.vstack((o, temp))
+                # o = np.vstack((o, temp))
+                o[(i * array.shape[3]) + j] = temp
         return o
 
     def fitPipeline(self, pipeline):
@@ -401,6 +409,8 @@ class DataHandler(object):
                 inSegments = np.vstack((inSegments, inPut))
                 targetSegments = np.vstack((targetSegments, target))
             if (traversedDataset):
+                inSegments = inSegments[:inSegments.shape[0] - 3]  # last two are leftovers
+                targetSegments = targetSegments[:targetSegments.shape[0] - 3]  # CHECK
                 break
         if (not pointers):
             self.inputSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])

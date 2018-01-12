@@ -137,7 +137,7 @@ class SwaptionGen(du.TimeSeriesData):
         [quote.setValue(vola) for vola, quote in zip(volas, self._quotes)]
 
     @staticmethod
-    def lengthInMonths(self, length):
+    def lengthInMonths(length):
         return (int(length % 1 * 100) + int(np.floor(length)) * 12)
 
     def __create_helpers(self):
@@ -767,7 +767,6 @@ def get_swaptiongen(modelMap=hullwhite_analytic, currency='GBP', irType='Libor',
     # ,'GBP','EUR','USD','CNY'
     # ,'libor','euribor','shibor','ois'
     index = None
-    pdb.set_trace()
     if (str(currency).lower() == 'gbp' and str(irType).lower() == 'libor'):
         index = ql.GBPLibor(ql.Period(6, ql.Months))
     elif (str(currency).lower() == 'eur' and str(irType).lower() == 'euribor'):
