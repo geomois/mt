@@ -193,7 +193,8 @@ class ConvNet(object):
             self.inputPipeline = self.inputPipelineList[index]
         return self.inputPipeline
 
-    def _getTransformationFunction(self, transformationType, step, pp):
+    @staticmethod
+    def _getTransformationFunction(transformationType, step, pp):
         if (pp.steps is not None):
             if (transformationType.lower() == "transform"):
                 if (step.lower() == 'scale'):
@@ -208,7 +209,8 @@ class ConvNet(object):
         else:
             raise Exception("No scaler found")
 
-    def npToTfFunc(self, func, inPut):
+    @staticmethod
+    def npToTfFunc(func, inPut):
         if (func is not None):
             if (func is np.exp):
                 inPut = tf.exp(inPut)
@@ -242,7 +244,8 @@ class ConvNet(object):
             x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
         return x
 
-    def derivationProc(self, out, totalDepth, xShape):
+    @staticmethod
+    def derivationProc(out, totalDepth, xShape):
         der = cu.transformDerivatives(out, 0, totalDepth, xShape)
         if (der.shape[1] > 1):
             out = np.average(der, axis=0).reshape((-1, 1))

@@ -9,6 +9,9 @@ from collections import deque
 import scipy.stats as stats
 import pdb
 
+colsToRemove = ['MDT_ID', 'MDE_ID', 'CURVE_ID_1', 'CURVE_ID_2', 'CURVE_ID_3', 'GMDB_SYMBOL', 'PNT_ID', 'CURVE_UNIFIED',
+                'Z1', 'MONEYNESS', "FutureDate"]
+
 
 def toAHDateSequence(dFrame, columns=['X'], shortDate=True):
     dat = dFrame.copy()
@@ -226,9 +229,7 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, target=False):
     return dat
 
 
-def shortClean(dFrame, columns=['MDT_ID', 'MDE_ID', 'CURVE_ID_1', 'CURVE_ID_2', 'CURVE_ID_3', 'GMDB_SYMBOL', 'PNT_ID',
-                                'CURVE_UNIFIED', 'Z1', 'MONEYNESS', "FutureDate"],
-               hasDuplicates=False):
+def shortClean(dFrame, columns=colsToRemove, hasDuplicates=False):
     dat = dFrame.copy()
     if (hasDuplicates):
         dat = dropDuplicates(dat)
@@ -243,9 +244,9 @@ def shortClean(dFrame, columns=['MDT_ID', 'MDE_ID', 'CURVE_ID_1', 'CURVE_ID_2', 
 
 # endregion nnData
 
-def toCalibrationTuple(list):
+def toCalibrationTuple(llist):
     CalibrationData = namedtuple("CalibrationData", "opt,swap,volatility")
-    data = [CalibrationData(float(x), float(y), float(z)) for x, y, z in list]
+    data = [CalibrationData(float(x), float(y), float(z)) for x, y, z in llist]
     return data
 
 

@@ -278,6 +278,7 @@ def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True)
     if (save):
         if (folder is None):
             folder = optionDict['checkpoint_dir'] + modelName + "/"
+        pdb.set_trace()
         np.save(folder + "testDerivatives.npy", der)
 
     return der
@@ -513,7 +514,6 @@ def main(_):
 
     if optionDict['calculate_gradient']:
         gh = setupNetwork(options=optionDict, gradientFlag=True)
-        # pdb.set_trace()
         if optionDict['calibrate_sigma']:
             if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
                 pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
@@ -536,7 +536,8 @@ def main(_):
             inPut = np.vstack((trainX, testX))
             deriv = gh.run(inPut, gh.gradientOp)
             path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
-            transformDerivatives(deriv, dh, inPut, path)
+            pdb.set_trace()
+            return transformDerivatives(deriv, dh, inPut, path)
 
     if optionDict['compare']:
         with tf.Session(config=getTfConfig()) as sess:

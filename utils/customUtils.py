@@ -85,13 +85,13 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
     else:
         derivative = derivative.reshape((-1, xShape[2]))
-
     datapoints = int(derivative.shape[0] / step)
     der = np.empty((0, datapoints))
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
             temp.append(np.abs(np.average(derivative[j])))
+            # temp.append(np.average(derivative[j]))
             # temp.append(np.average(np.abs(derivative[j])))
         der = np.vstack((der, temp))
     return der
