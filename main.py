@@ -370,7 +370,6 @@ def getPipelines(options):
             inPP = buildPipeLine(options['in_transform'], options['in_scaler'], pipelinePath)
         except:
             pass
-
     return outPP, inPP
 
 
@@ -389,8 +388,10 @@ def buildPipeLine(transform, scaler, fName=None):
             sc = None
         pipeline = Pipeline([('funcTrm', transformFunc), ('scaler', sc)])
     else:
-        pipeline = joblib.load(fName)
-
+        try:
+            pipeline = joblib.load(fName)
+        except:
+            pipeline = cu.loadSavedScaler(optionDict['input_pipeline'])
     return pipeline
 
 

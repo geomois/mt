@@ -28,10 +28,14 @@ class ConvNet(object):
         self.inKernelSize = self.kernels[0]
         self.architecture = architecture
         self.pipeline = pipeline
-        self.inputPipeline = inPipeline
+        if (type(inPipeline) == list):
+            self.inputPipelineList = inPipeline
+            self.inputPipeline = None
+        else:
+            self.inputPipelineList = []
+            self.inputPipeline = inPipeline
         self.calibrationFunc = calibrationFunc
         self.pipelineList = []
-        self.inputPipelineList = []
         self.chainedModel = chainedModel
         self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
         self.derive = derive
@@ -288,15 +292,18 @@ class ConvNet(object):
             out = sess.run(self.outOp, feed_dict={x_pl: x, chained_pl: chainedOutput})
         else:
             out = sess.run(self.outOp, feed_dict={x_pl: x})
+
         if (self.derive):
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
             if (len(self.pipelineList) > 0 or self.pipeline is not None):
+                pdb.set_trace()
                 if (len(self.pipelineList) == 0):
                     # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
                     out = self.pipeline.inverse_transform(np.asarray(out))
                 else:
                     out = self.applyPipeLine('inverse', out, 'output', useTf=False)
+
             if (chainedOutput is not None):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))

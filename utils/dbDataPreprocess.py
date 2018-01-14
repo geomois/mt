@@ -326,17 +326,19 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
     # df[df.someColumn.isin(someList)] #keep data that are also in somelist
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
 
-# Plot errors
+# #Plot errors
 # import numpy as np
 # import matplotlib.pyplot as plt
 # import pandas as pd
 # ind=0
-# with pd.HDFStore('../../../data/data.h5') as store:
+# with pd.HDFStore('data/data.h5') as store:
 #     er = store['/Errors/IR/SWO/GBP/Hull_White_analytic_formulae']
-#     params = store['/Models/IR/SWO/GBP/Hull_White_analytic_formulae']
-# emp = np.load("001sigmas.npy")
-# first = np.load("firstSigmas.npy")
-# long = np.load("147kVolatile_avgSigmas.npy")
+#     pp = store['/Models/IR/SWO/GBP/Hull_White_analytic_formulae']
+# emp = np.load("tf/checkpoints/Ps30_1_44_44_cnn_Acfd_w30_v0_ir44/01Sigmas.npy")
+# first = np.load("tf/checkpoints/convR_Elu6k/Params.npy")
+# chained = np.load("tf/checkpoints/chained_ReluElucnn_Acfd_w30_v156_ir0/Params.npy")
+# # long = np.load("tf/checkpoints/Ps30_1_44_44_cnn_Acfd_w30_v0_ir44/147kSigmas.npy")
+# static = np.load("tf/checkpoints/chained_ReluElu_Statcnn_Acfd_w30_v156_ir0/Params.npy")
 # err = er.as_matrix()
 # errA = []
 # for i in range(err.shape[0]):
@@ -345,10 +347,19 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
 # ddates = np.asarray(pd.to_datetime(dates[29:]))
 # plt.figure()
 # plt.grid()
-# plt.plot(ddates, errA[29:], label='default QL error')
-# plt.plot(ddates, emp[:, ind], label='0.001 error')
-# plt.plot(ddates, long[:, ind], label='@147k error')
-# plt.plot(ddates, first[:, ind], label='@6900k error')
+# # chained = np.vstack((np.zeros((29,3)),chained))
+# # ccc = np.vstack((np.zeros((29,3)),ccc))
+# # plt.plot(ddates, errA[29:], label='Default QL')
+# if(ind == 2):
+#     plt.plot(ddates, pp['OrigMeanError'].as_matrix()[29:], label='Default QL')
+# else:
+#     plt.plot(ddates, pp['OrigParam'+str(ind)].as_matrix()[29:], label='Default QL')
+# plt.plot(ddates, emp[:, ind], label='Static 0.01')
+# plt.plot(ddates, chained[:, ind], label='Chained')
+# # plt.plot(ddates, long[:, ind], label='147k')
+# plt.plot(ddates, static[:, ind], label='Static nn')
+# plt.plot(ddates, first[:, ind], label='6k Full')
+# plt.title('Alpha')
 # plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
 
 
