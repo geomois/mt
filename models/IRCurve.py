@@ -74,7 +74,7 @@ class IRCurve(du.TimeSeriesData):
     def zeta(x, T):
         levels = T
         t0 = x.dates()[0]
-        delta = ql.Period(1, ql.Hours)
+        delta = ql.Period(1, ql.Days)
 
         zDelta = x.zeroRate(t0 + delta, x.dayCounter(), ql.Continuous).rate()
         expSums = np.zeros((len(levels)))
@@ -87,7 +87,7 @@ class IRCurve(du.TimeSeriesData):
                 cSum += x.zeroRate(ddate, x.dayCounter(), ql.Continuous).rate()
             cSum = np.exp(-cSum)
             expSums[i - 1] = cSum
-        return expSums, zDelta
+        return expSums, np.exp(-zDelta)
 
     def getHWForwardRate(self, ddate, T, deltaT):
         z1, zDelta = self.zeta(self.__getitem__(ddate), T)
@@ -104,16 +104,16 @@ class IRCurve(du.TimeSeriesData):
         print("Fitting params")
         pdb.set_trace()
         for i in range(irPre.shape[0]):
-            ls = sm.GLS(irPre[0, :].reshape(-1, 1), irAft[0, :].reshape(-1, 1))
-            res = ls.fit()
-            levelParams.append([res.params[0], res.bse])
+        	ls = sm.OLS(irPre[i,:200].reshape(-1, 1), irAft[i,:200].reshape(-1, 1))
+        	res = ls.fit()
+        	levelParams.append([res.params[0], res.bse[0]])
         levelParams = np.asarray(levelParams)
         return levelParams[:, 0], levelParams[:, 1]
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
     def calcThetaHW(self, path=None):
         thetaFrame = pd.DataFrame(columns=["Date", "Tenor", "Rate"])
-        deltaT = 1 / 24  # 0.00277778  # 1 Day
+        deltaT = 1 # 0.00277778  # 1 Day
         levels = np.asarray(self._levels)[0]
         firstCurve = self.__getitem__(self._dates[0])
         T = levels
@@ -121,9 +121,9 @@ class IRCurve(du.TimeSeriesData):
         # T.append((t / 365.0) if (t / 365.0) <= firstCurve.maxTime() else firstCurve.maxTime())
 
         alpha0, sigma = self.calibrateStatic()
-
+        pdb.set_trace()
         alpha = -np.log(alpha0) / deltaT
-        sigma = sigma * np.sqrt((-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2)))
+        sigma = np.power(sigma,2) *(-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
         for i in range(len(self._dates)):
             ddate = self._dates[i]
@@ -131,8 +131,9 @@ class IRCurve(du.TimeSeriesData):
             fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
             fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
             add1 = alpha * fw
-            add2 = (np.power(sigma, 2) / 2 * alpha) * (1 - np.exp(-alpha * deltaT))  # (T/365.0)
+            add2 = (sigma / (2 * alpha)) * (1 - np.exp(-alpha * deltaT))  # (T/365.0)
             dtFw = (fwPlus - fwMinus) / (2 * deltaT)
+            pdb.set_trace()
             theta[i] = dtFw + add1 + add2
             refDate = pd.to_datetime(ddate)
             tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
