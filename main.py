@@ -497,7 +497,8 @@ def main(_):
             ir = irc.getIRCurves(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
                                  irFileName=optionDict['irFileName'])
             # dateInDays = optionDict['irType'] if optionDict['dayDict']
-            ir.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
+            # ir.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
+            ir.calcThetaHW(path=exportPath)
         else:
             print("File already exists")
 
