@@ -91,6 +91,8 @@ class IRCurve(du.TimeSeriesData):
 
     def getHWForwardRate(self, ddate, T, deltaT):
         z1, zDelta = self.zeta(self.__getitem__(ddate), T)
+        print(z1, zDelta)
+        pdb.set_trace()
         fw = (-np.log(z1) - np.log(zDelta)) / deltaT
         return fw
 
@@ -102,18 +104,20 @@ class IRCurve(du.TimeSeriesData):
         irAft = curves[:, 1:]
         levelParams = []
         print("Fitting params")
-        pdb.set_trace()
         for i in range(irPre.shape[0]):
-        	ls = sm.OLS(irPre[i,:200].reshape(-1, 1), irAft[i,:200].reshape(-1, 1))
-        	res = ls.fit()
-        	levelParams.append([res.params[0], res.bse[0]])
+            ls = sm.OLS(irPre[i, :100].reshape(-1, 1), irAft[i, :100].reshape(-1, 1))
+            res = ls.fit()
+            levelParams.append([res.params[0], res.bse[0]])
+            # pdb.set_trace()
+            # res = ls.fit_regularized(alpha=0.00001)
+            # levelParams.append(res.params[0])
         levelParams = np.asarray(levelParams)
         return levelParams[:, 0], levelParams[:, 1]
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
     def calcThetaHW(self, path=None):
         thetaFrame = pd.DataFrame(columns=["Date", "Tenor", "Rate"])
-        deltaT = 1 # 0.00277778  # 1 Day
+        deltaT = 1  # 0.00277778  # 1 Day
         levels = np.asarray(self._levels)[0]
         firstCurve = self.__getitem__(self._dates[0])
         T = levels
@@ -123,25 +127,45 @@ class IRCurve(du.TimeSeriesData):
         alpha0, sigma = self.calibrateStatic()
         pdb.set_trace()
         alpha = -np.log(alpha0) / deltaT
-        sigma = np.power(sigma,2) *(-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
+        sigma = np.power(sigma, 2) * (-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
         for i in range(len(self._dates)):
             ddate = self._dates[i]
-            fw = self.getHWForwardRate(ddate, T, deltaT)
-            fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
-            fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
-            add1 = alpha * fw
-            add2 = (sigma / (2 * alpha)) * (1 - np.exp(-alpha * deltaT))  # (T/365.0)
-            dtFw = (fwPlus - fwMinus) / (2 * deltaT)
+            # fw = self.getHWForwardRate(ddate, T, deltaT)
+            # fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
+            # fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
+            # add1 = alpha * fw
+            # add2 = (sigma / (2 * alpha)) * (1 - np.exp(-alpha * deltaT))  # (T/365.0)
+            # dtFw = (fwPlus - fwMinus) / (2 * deltaT)
+            # theta[i] = dtFw + add1 + add2
+            ts = pd.Timestamp(ddate)
+            refDate = ql.Date(ts.day, ts.month, ts.year)
+            futureDate = refDate + ql.Period(180, ql.Days)
+            fw = self.curveToArray(levels, getImpliedForwardCurve(futureDate, self.__getitem__(ddate)))
+            fwMinus = self.curveToArray(levels,
+                                        getImpliedForwardCurve(futureDate - ql.Period(deltaT, ql.Days),
+                                                               self.__getitem__(ddate)))
+            fwPlus = self.curveToArray(levels,
+                                       getImpliedForwardCurve(futureDate + ql.Period(deltaT, ql.Days),
+                                                              self.__getitem__(ddate)))
             pdb.set_trace()
-            theta[i] = dtFw + add1 + add2
-            refDate = pd.to_datetime(ddate)
-            tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
-            thetaFrame = thetaFrame.append(pd.DataFrame(tRate, columns=thetaFrame.columns.tolist()))
+
+            dtFw = (fwPlus - fwMinus) / (2 * deltaT)
+            theta[i] = dtFw + fw
+            # refDate = pd.to_datetime(ddate)
+            # tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
+            # thetaFrame = thetaFrame.append(pd.DataFrame(tRate, columns=thetaFrame.columns.tolist()))
         pdb.set_trace()
         if (path is not None):
             thetaFrame.to_csv(path, index=False)
         return thetaFrame
+
+    def curveToArray(self, levels, curve):
+        fwRates = []
+        for T in levels:
+            tenor = (T / 365.0) if (T / 365.0) <= curve.maxTime() else curve.maxTime()
+            fwRates.append(curve.zeroRate(tenor, ql.Continuous).rate())
+        return np.asarray(fwRates)
 
 
 def getIRCurves(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNode=du.h5_ts_node, irFileName=None):
