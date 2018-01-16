@@ -55,6 +55,13 @@ class TimeSeriesData(object):
     def dates(self):
         return self._dates
 
+    def getAll(self):
+        allCurves = np.empty((len(self._data.loc[self._dates[0]].as_matrix()), len(self._dates)))
+        for i in range(len(self._dates)):
+            _, rates = zip(*self.__getitem__(self._dates[i]).nodes())
+            allCurves[:, i] = np.asarray(rates)
+        return allCurves
+
     def intersection(self, rest):
         return self._dates.intersection(rest._dates)
 
