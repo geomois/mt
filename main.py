@@ -275,6 +275,7 @@ def setupChainedModel(chainedModelDict, useDataHandler=False):
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
     der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX.shape)
+    pdb.set_trace()
     if (save):
         if (folder is None):
             folder = optionDict['checkpoint_dir'] + modelName
@@ -533,7 +534,7 @@ def main(_):
             folder = optionDict['checkpoint_dir'] + modelName + "/"
             np.save(folder + "sigmas.npy", sigmas)
         else:
-            dh = setupDataHandler(optionDict, allowPredictiveTransformation=False, testPercentage=0)
+            dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
             testX, _ = dh.getTestData()
             testX = testX[:, :, :, :optionDict['conv_ir_depth']]
             dh.getNextBatch()

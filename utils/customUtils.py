@@ -73,6 +73,7 @@ def getImpliedForwardCurve(futureDate, curve):
     refDate = curve.nodes()[0][0]
     ql.Settings.instance().evaluationDate = refDate
     dates, rates = zip(*curve.nodes())
+    pdb.set_trace()
     initCurve = ql.ZeroCurve(dates, rates, curve.dayCounter())
     impliedCurve = ql.ImpliedTermStructure(ql.YieldTermStructureHandle(initCurve), futureDate)
     return impliedCurve
@@ -80,6 +81,7 @@ def getImpliedForwardCurve(futureDate, curve):
 
 def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     derivative = np.asarray(derivative[0])
+    pdb.set_trace()
     step = channelEnd - channelStart
     if (xShape[3] is not 1):
         derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
@@ -91,10 +93,12 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         temp = []
         for j in range(i, derivative.shape[0], step):
             # temp.append(np.abs(np.average(derivative[j])))
-            temp.append(np.average(derivative[j]))
+            # temp.append(np.average(derivative[j]))
+            temp.append(np.sum(derivative[j]))
             # temp.append(np.average(np.abs(derivative[j])))
         # der = np.vstack((der, temp))
-        der[i] = np.abs(temp)
+        # der[i] = np.abs(temp)
+        der[i] = temp
     return der
 
 

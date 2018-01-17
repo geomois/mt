@@ -126,7 +126,8 @@ class IRCurve(du.TimeSeriesData):
 
         alpha0, sigma = self.calibrateStatic()
         pdb.set_trace()
-        alpha = -np.log(alpha0) / deltaT
+        alpha = 1 - alpha0
+        # alpha = -np.log(alpha0) / deltaT
         sigma = np.power(sigma, 2) * (-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
         for i in range(len(self._dates)):

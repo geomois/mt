@@ -247,7 +247,7 @@ class DataHandler(object):
                     self.trainData["output"] = np.vstack((self.trainData["output"], outPut))
                 if (len(self.trainData["input"]) == len(self.dataPointers["vol"]) and self.saveProcessedData):
                     suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
-                        self.segmentWiself.h) + '_' + str(self.volself.pth) + '_' + str(self.irself.pth)
+                        self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
                     self._saveProcessedData(suffix, 'train')
             else:
                 modulo = len(self.trainData["input"])
@@ -405,12 +405,15 @@ class DataHandler(object):
                 self.dataPointers['ir'].append(ir)
                 self.dataPointers[self.targetName].append(target)
             else:
-                inPut = self._mergeReashapeInput(vol, ir)
-                inSegments = np.vstack((inSegments, inPut))
-                targetSegments = np.vstack((targetSegments, target))
+                if (vol is None and ir is None and target is None):
+                    pass
+                else:
+                    inPut = self._mergeReashapeInput(vol, ir)
+                    inSegments = np.vstack((inSegments, inPut))
+                    targetSegments = np.vstack((targetSegments, target))
             if (traversedDataset):
-                inSegments = inSegments[:inSegments.shape[0] - 3]  # last two are leftovers
-                targetSegments = targetSegments[:targetSegments.shape[0] - 3]  # CHECK
+                # inSegments = inSegments[:inSegments.shape[0] - 3]  # last two are leftovers
+                # targetSegments = targetSegments[:targetSegments.shape[0] - 3]  # CHECK
                 break
         if (not pointers):
             self.inputSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
@@ -428,6 +431,7 @@ class DataHandler(object):
 
     def _buildBatch(self, width, volDepth, irDepth, pointers=True):
         irData = volData = target = None
+        targetEnd = False
         if (irDepth == 0):
             irDepthEnd = True
         else:
@@ -492,20 +496,25 @@ class DataHandler(object):
             else:
                 irData = self.ir[irStartPosition:irStopPosition, startWidthPosition:endWidthPosition]
 
-        if (pointers):
-            target = endWidthPosition - 1
+        if (self.targetName.lower() == 'deltair'):
+            targetPos = endWidthPosition
         else:
-            if (endWidthPosition - 1 >= self.target.shape[1]):
-                pos = self.target.shape[1] - 1
-            else:
-                pos = endWidthPosition - 1
+            targetPos = endWidthPosition - 1
 
-            target = self.target[:, pos]
+        if (pointers):
+            target = targetPos
+        else:
+            if (targetPos >= self.target.shape[1]):
+                # pos = self.target.shape[1] - 1
+                irData = volData = target = None
+                targetEnd = True
+            else:
+                target = self.target[:, targetPos]
 
         self.prevWidthStopPosition = endWidthPosition
         self.prevWidthStartPosition = startWidthPosition
 
-        if (seriesEnd and irDepthEnd and volDepthEnd):
+        if ((seriesEnd and irDepthEnd and volDepthEnd) or targetEnd):
             self.endOfSeriesCount = 0
             self.prevIrStartPosition = -1
             self.prevVolStartPosition = -1
