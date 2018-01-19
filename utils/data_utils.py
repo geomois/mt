@@ -3,7 +3,7 @@ from sklearn.decomposition import PCA
 from utils.customUtils import *
 import pdb
 
-data_dir = '../data/'
+data_dir = 'data/'
 h5file = data_dir + 'data.h5'
 h5_ts_node = 'TS'
 h5_tsc_node = 'TSC'

@@ -184,5 +184,4 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     _ = dd.getNextBatch()
     suffix = 'train' + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(dd.segmentWidth) + '_' + str(
         dd.volDepth) + '_' + str(dd.irDepth)
-    pdb.set_trace()
     dd._saveProcessedData(suffix, 'train')
