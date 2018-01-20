@@ -180,7 +180,6 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             # testY = np.random.random(testY.shape)
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
-            pdb.set_trace()
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
@@ -226,7 +225,8 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                     else:
                         out, merged_sum = sess.run([loss, mergedSummaries], feed_dict={x_pl: testX, y_pl: testY})
 
-                    if (out + 0.00001 < prevTestLoss and optionDict['extend_training']):
+                    if (out + 0.00001 <= prevTestLoss and optionDict['extend_training']):
+                        prevTestLoss = out
                         if (max_steps - epoch <= optionDict['test_frequency']):
                             max_steps += optionDict['test_frequency'] + 1
                     test_writer.add_summary(merged_sum, epoch)
