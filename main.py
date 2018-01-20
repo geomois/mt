@@ -180,7 +180,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             # testY = np.random.random(testY.shape)
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
-
+            pdb.set_trace()
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
