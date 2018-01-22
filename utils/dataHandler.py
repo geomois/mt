@@ -186,6 +186,8 @@ class DataHandler(object):
         self.testData['input'] = inPut
 
     def initializePipelines(self, inputPipeline=None, outPipeline=None):
+        if (self.predictive is not None and not self.transformed['train']):
+            self._feedTransform('train')
         if (self.delegatedFromFile):
             if (outPipeline is not None):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])

@@ -98,6 +98,8 @@ def trainLSTM(dataHandler):
 
 def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     testX, testY = dataHandler.getTestData()
+    # testX = testX[:,:1]
+    # testY = testY[:,:1]
     chained_pl = None
     if chainedModel is not None:
         chained_pl = chainedModel['placeholder']
@@ -131,6 +133,7 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     pred = cnn.inference(x_pl, chained_pl)
     tf.add_to_collection("predict", pred)
     loss = cnn.loss(pred, y_pl)
+    tf.add_to_collection("loss", loss)
 
     return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
 
@@ -187,6 +190,8 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
+                # batch_x = batch_x[:,:1]
+                # batch_y = batch_y[:,:1]
                 if (chainedModel is not None):
                     chained_train_x, _ = chainedDH.getNextBatch()
                     cOut = gh.run(op=gh.gradientOp, data=chained_train_x)
@@ -215,7 +220,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                         if (inputPipeline is not None):
                             print("Transforming testX")
                             testX = inputPipeline.transform(testX)
-                    pdb.set_trace()
+                    # pdb.set_trace()
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
                         cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
@@ -694,6 +699,7 @@ if __name__ == '__main__':
                 optionDict['input_pipeline'] = OPTIONS.chained_pipeline
                 optionDict['use_input_pipeline'] = True
             optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
+            optionDict['irFileName'] = OPTIONS.irFileName
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
             optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
@@ -703,6 +709,7 @@ if __name__ == '__main__':
             # Keep calibration related input
             optionDict['currency'] = OPTIONS.currency
             optionDict['irType'] = OPTIONS.irType
+            pdb.set_trace()
 
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))

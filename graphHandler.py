@@ -17,6 +17,7 @@ class GraphHandler(object):
         self.prefix = chainedPrefix
         self.predictOperation = None
         self.inputPlaceholder = None
+        self.outputPlaceholder = None
         self.chainedPlaceholder = None
         self.gradientOp = None
         self.sessionConfig = sessConfig
@@ -28,10 +29,12 @@ class GraphHandler(object):
     def importSavedNN(self, fileName=None, gradientFlag=False):
         self.setSession()
         with self.graph.as_default():
+            pdb.set_trace()
             saver = tf.train.import_meta_graph(self.modelPath + fileName + ".meta", clear_devices=False)
             graph = tf.get_default_graph()
             check = tf.train.get_checkpoint_state(self.modelPath)
             x_pl = graph.get_tensor_by_name("x_pl:0")
+            y_pl = graph.get_tensor_by_name("y_pl:0")
             if (self.prefix != ""):
                 self.chainedPlaceholder = graph.get_tensor_by_name(self.prefix + "x_pl:0")
             # self.session.run(tf.global_variables_initializer())
@@ -44,9 +47,13 @@ class GraphHandler(object):
                 saver.restore(self.session, self.modelPath + fileName)
             self.predictOperation = tf.get_collection("predict")[0]
             self.inputPlaceholder = x_pl
+            self.outputPlaceholder = y_pl
             self.session.run(tf.global_variables_initializer())
             if (gradientFlag):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
+                pdb.set_trace()
+                loss = self.model.loss(self.predictOperation, y_pl)
+                self.gradientOp = tf.gradients(loss, [self.inputPlaceholder, self.outputPlaceholder])
 
     def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None):
         if (chained is not None):
