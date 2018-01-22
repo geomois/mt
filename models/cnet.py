@@ -46,7 +46,7 @@ class ConvNet(object):
         :param chainedValues: values from chained network
         :return: [alpha, sigma]
         '''
-        self.inChannels = x.shape[3].value
+        self.inChannels = x.shape[len(x.shape) - 1].value
         nbChannels = self.inChannels
         layer = None
         flatcount = 0

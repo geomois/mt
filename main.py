@@ -102,13 +102,16 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     if chainedModel is not None:
         chained_pl = chainedModel['placeholder']
 
-    print("Input dims" + str((None, 1, testX.shape[2], testX.shape[3])))
+    print("Input dims" + str(testX.shape))
     if (int(optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
         print("Aligning...")
         optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1] = testY.shape[1]
     print("Output dims" + str((None, testY.shape[1])))
-    x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
+    if len(testX.shape) < 3:
+        x_pl = tf.placeholder(tf.float32, shape=(None, testX.shape[1]), name="x_pl")
+    else:
+        x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
@@ -180,6 +183,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             # testY = np.random.random(testY.shape)
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
+            pdb.set_trace()
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
@@ -211,7 +215,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                         if (inputPipeline is not None):
                             print("Transforming testX")
                             testX = inputPipeline.transform(testX)
-
+                    pdb.set_trace()
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
                         cOut = gh.run(op=gh.gradientOp, data=chained_test_x)
@@ -243,7 +247,10 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
         optionDict['pipeline'] = savePipeline(outPipeline, 'out')
         opts = get_options(False, modelDir=checkpointFolder + str(optionDict['max_steps']))
-        opts["input_dims"] = (None, 1, testX.shape[2], testX.shape[3])
+        if (len(x_pl.get_shape()) < 3):
+            opts["input_dims"] = (None, x_pl.get_shape()[1].value)
+        else:
+            opts["input_dims"] = (None, x_pl.get_shape()[1].value, x_pl.get_shape()[2].value, x_pl.get_shape()[3].value)
         if (gradient is not None):
             opts["output_dims"] = (None, 1)
         else:
@@ -536,10 +543,15 @@ def main(_):
         else:
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
             testX, _ = dh.getTestData()
-            testX = testX[:, :, :, :optionDict['conv_ir_depth']]
+            if(len(testX.shape)>2):
+                testX = testX[:, :, :, :optionDict['conv_ir_depth']]
             dh.getNextBatch()
-            trainX = dh.trainData['input'][:, :, :, :optionDict['conv_ir_depth']]
+            if (len(testX.shape) >2):
+                trainX = dh.trainData['input'][:, :, :, :optionDict['conv_ir_depth']]
+            else:
+                trainX = dh.trainData['input']
             inPut = np.vstack((trainX, testX))
+            pdb.set_trace()
             deriv = gh.run(inPut, gh.gradientOp)
             path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
             transformDerivatives(deriv, dh, inPut, path)

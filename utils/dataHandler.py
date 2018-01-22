@@ -141,6 +141,7 @@ class DataHandler(object):
             try:
                 if (len(mode) > 0):
                     dataDict[mode] = np.load(file)
+                    dataDict[mode] = self._simplify(np.asarray(dataDict[mode]))
                 else:
                     raise FileNotFoundError
             except:
@@ -173,7 +174,9 @@ class DataHandler(object):
         else:
             # pdb.set_trace()
             inPut = self.inputSegments[~self.splitBooleanIndex]
-            outPut = self.outputSegments[~self.splitBooleanIndex]
+            outPut = None
+            if (self.target is not None):
+                outPut = self.outputSegments[~self.splitBooleanIndex]
 
         if (self.datePointer and not self.randomSplitting):
             firstTestPoint = int(np.floor(dataLength * (1 - self.testDataPercentage)))
@@ -207,6 +210,10 @@ class DataHandler(object):
                 if (self.predictive is not None and not self.transformed['train']):
                     self._feedTransform('train')
                     # modulo = len(self.trainData["input"])
+                if (self.saveProcessedData):
+                    suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
+                        self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+                    self._saveProcessedData(suffix, 'train')
             else:
                 if ((len(self.inputSegments) == 0 and len(
                         self.dataPointers['vol']) == 0) or self.segmentWidth != width):
@@ -222,10 +229,17 @@ class DataHandler(object):
                     modulo = len(self.dataPointers['vol'])
                 else:
                     self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
-                    self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+                    if (self.target is not None):
+                        self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+                    if (self.predictive is not None and not self.transformed['train']):
+                        self._feedTransform('train')
                     if (pipeline is not None):
                         # pdb.set_trace()
                         self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
+                    if (self.saveProcessedData):
+                        suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
+                            self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+                        self._saveProcessedData(suffix, 'train')
                     modulo = len(self.inputSegments)
 
             if (randomDraw):
@@ -316,23 +330,31 @@ class DataHandler(object):
                         # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
                 targetDict['output'] = targetArray
             else:
+                # pdb.set_trace()
                 targetDict['output'] = self._reshapeToPredict(
-                    np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd])).reshape(
-                    (-1, 1))  # skip first
-            inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth, :]  # skip last
+                    np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd]),
+                    outDepth).reshape((-1, outDepth))  # skip first
+            inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
+                    self.channelStart:self.channelEnd]  # skip last
             targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
             self.transformed[data] = True
 
-    def _reshapeToPredict(self, array):  # CHECK
-        o = np.empty((0, 1, array.shape[2], 1))
+    def _reshapeToPredict(self, array, depth):  # CHECK
+        tShape = array.reshape((-1, 1, array.shape[2], depth)).shape
+        o = np.empty(tShape)
+        # o = np.empty((0, 1, array.shape[2], 1))
         for i in range(array.shape[0]):
-            temp = array[i, :].T.reshape(-1, 1, array.shape[2], 1)
-            o = np.vstack((o, temp))
+            temp = array[i, :].T.reshape(-1, 1, array.shape[2], depth)
+            # o = np.vstack((o, temp))
+            o[i] = temp
         return o
 
     def reshapeMultiple(self, array, depth):  # CHECK
         # o = np.empty((0, 1, array.shape[2], depth))
-        o = np.empty((array.shape[0] * array.shape[3], 1, array.shape[2], depth))
+        tShape = array.reshape((-1, 1, array.shape[2], depth)).shape
+        if (tShape == array.shape):
+            return array
+        o = np.empty(tShape)
         for i in range(array.shape[0]):
             for j in range(self.channelStart, self.channelEnd, depth):
                 colEnd = j + depth
@@ -397,7 +419,8 @@ class DataHandler(object):
 
     def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
-        targetSegments = np.empty((0, self.target.shape[0]))
+        if (self.target is not None):
+            targetSegments = np.empty((0, self.target.shape[0]))
         while (True):
             vol, ir, target, traversedDataset = self._buildBatch(width, volDepth, irDepth, pointers=pointers)
             if (pointers):
@@ -410,14 +433,16 @@ class DataHandler(object):
                 else:
                     inPut = self._mergeReashapeInput(vol, ir)
                     inSegments = np.vstack((inSegments, inPut))
-                    targetSegments = np.vstack((targetSegments, target))
+                    if (self.target is not None):
+                        targetSegments = np.vstack((targetSegments, target))
             if (traversedDataset):
-                # inSegments = inSegments[:inSegments.shape[0] - 3]  # last two are leftovers
+                # inSegments = inSegments[:inSegments.shape[0] - 3]  # last are leftovers
                 # targetSegments = targetSegments[:targetSegments.shape[0] - 3]  # CHECK
                 break
         if (not pointers):
             self.inputSegments = inSegments.reshape(inSegments.shape[0], 1, width, inSegments.shape[2])
-            self.outputSegments = targetSegments
+            if (self.target is not None):
+                self.outputSegments = targetSegments
 
     def _mergeReashapeInput(self, vol, ir):
         inPut = None
@@ -428,6 +453,12 @@ class DataHandler(object):
         inPut = np.column_stack((vol.T, ir.T)) if inPut is None else inPut
         inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
         return inPut
+
+    def _simplify(self, x):
+        if (len(x.shape) > 3):
+            if (x.shape[1] == 1 and x.shape[2] == 1):
+                x = x.reshape(x.shape[0], x.shape[3])
+        return x
 
     def _buildBatch(self, width, volDepth, irDepth, pointers=True):
         irData = volData = target = None
@@ -495,21 +526,21 @@ class DataHandler(object):
                 irData = (irStartPosition, irStopPosition, startWidthPosition, endWidthPosition)
             else:
                 irData = self.ir[irStartPosition:irStopPosition, startWidthPosition:endWidthPosition]
-
-        if (self.targetName.lower() == 'deltair'):
-            targetPos = endWidthPosition
-        else:
-            targetPos = endWidthPosition - 1
-
-        if (pointers):
-            target = targetPos
-        else:
-            if (targetPos >= self.target.shape[1]):
-                # pos = self.target.shape[1] - 1
-                irData = volData = target = None
-                targetEnd = True
+        if (self.target is not None):
+            if (self.targetName.lower() == 'deltair'):
+                targetPos = endWidthPosition
             else:
-                target = self.target[:, targetPos]
+                targetPos = endWidthPosition - 1
+
+            if (pointers):
+                target = targetPos
+            else:
+                if (targetPos >= self.target.shape[1]):
+                    # pos = self.target.shape[1] - 1
+                    irData = volData = target = None
+                    targetEnd = True
+                else:
+                    target = self.target[:, targetPos]
 
         self.prevWidthStopPosition = endWidthPosition
         self.prevWidthStartPosition = startWidthPosition

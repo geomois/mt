@@ -34,7 +34,7 @@ class GraphHandler(object):
             x_pl = graph.get_tensor_by_name("x_pl:0")
             if (self.prefix != ""):
                 self.chainedPlaceholder = graph.get_tensor_by_name(self.prefix + "x_pl:0")
-            self.session.run(tf.global_variables_initializer())
+            # self.session.run(tf.global_variables_initializer())
             if (fileName is None):
                 try:
                     saver.restore(self.session, check.model_checkpoint_path)
@@ -44,7 +44,7 @@ class GraphHandler(object):
                 saver.restore(self.session, self.modelPath + fileName)
             self.predictOperation = tf.get_collection("predict")[0]
             self.inputPlaceholder = x_pl
-
+            self.session.run(tf.global_variables_initializer())
             if (gradientFlag):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
 
