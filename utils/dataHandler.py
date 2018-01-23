@@ -192,7 +192,9 @@ class DataHandler(object):
             if (outPipeline is not None):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
             if (inputPipeline is not None):
-                self.trainData["input"] = outPipeline.fit_transform(self.trainData["input"])
+                for i in range(np.asarray(self.trainData["input"]).shape[3]):
+                    self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
+                        self.trainData["input"][:, 0, :, i])
 
         # if (self.predictive is not None and not self.transformed['train']):
         #     self._feedTransform('train')
@@ -310,7 +312,7 @@ class DataHandler(object):
             self.channelEnd = self.volDepth
         else:
             self.channelStart = self.volDepth + channelRange[0]
-            self.channelEnd = targetShape[3] if channelRange[1] <= 0 else channelRange[1]
+            self.channelEnd = targetShape[3] if channelRange[1] <= 0 else self.channelStart + channelRange[1]
         if (outWidth > targetShape[2]):
             outWidth = targetShape[2]
         if (inWidth > targetShape[2]):
@@ -334,11 +336,12 @@ class DataHandler(object):
             else:
                 # pdb.set_trace()
                 targetDict['output'] = self._reshapeToPredict(
-                    np.asarray(targetDict['input'][1:, :, :outWidth, self.channelStart:self.channelEnd]),
+                    np.asarray(targetDict['input'][inWidth:, :, :outWidth, self.channelStart:self.channelEnd]),
                     outDepth).reshape((-1, outDepth))  # skip first
             inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
                     self.channelStart:self.channelEnd]  # skip last
             targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
+
             self.transformed[data] = True
 
     def _reshapeToPredict(self, array, depth):  # CHECK

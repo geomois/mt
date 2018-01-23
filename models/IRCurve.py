@@ -139,6 +139,7 @@ class IRCurve(du.TimeSeriesData):
             # res = ls.fit_regularized(alpha=0.00001)
             # levelParams.append(res.params[0])
         levelParams = np.asarray(levelParams)
+        pdb.set_trace()
         return levelParams[:, 0], levelParams[:, 1]
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf

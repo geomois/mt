@@ -87,6 +87,18 @@ class ConvNet(object):
                                                  initializer=self._getFunction('init', 'd')())
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     densecount += 1
+                elif (l.lower() == 'cus' or l.lower() == "customDense"):
+                    with tf.variable_scope('customDense'):
+                        weights = tf.get_variable("w", [layer.get_shape()[1], units],
+                                                  regularizer=self._getFunction('reg', 'd')(
+                                                      self.regularizationStrength),
+                                                  initializer=self._getFunction('init', 'd')())
+                        bias = tf.get_variable("b", [1], initializer=tf.constant_initializer(0.1))
+                        layer = tf.add(tf.matmul(x, weights), bias)
+                        self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
+                        self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
+                        return layer
+                        tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
         return layer
 
     def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, activationFunc=tf.nn.relu,
@@ -180,6 +192,10 @@ class ConvNet(object):
             tf.summary.scalar('loss_regularized', loss)
 
         return loss
+
+    def setChainedDict(self, chainedModel):
+        self.chainedModel = chainedModel
+        self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
 
     def setPipelineList(self, plist):
         self.pipelineList = plist

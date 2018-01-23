@@ -186,7 +186,6 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             # testY = np.random.random(testY.shape)
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
-            pdb.set_trace()
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
@@ -219,7 +218,8 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                             testY = outPipeline.transform(testY)
                         if (inputPipeline is not None):
                             print("Transforming testX")
-                            testX = inputPipeline.transform(testX)
+                            for i in range(np.asarray(testX).shape[3]):
+                                testX[:, 0, :, i] = inputPipeline.transform(testX[:, 0, :, i])
                     # pdb.set_trace()
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
@@ -240,13 +240,14 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                             max_steps += optionDict['test_frequency'] + 1
                     test_writer.add_summary(merged_sum, epoch)
                     test_writer.flush()
-                    print("Test set:" "loss=", "{:.6f}".format(out))
+                    print("Test set:" "loss=", "{:.10f}".format(out))
                 if epoch % optionDict['checkpoint_freq'] == 0 and epoch > 0:
                     saver.save(sess, checkpointFolder + str(epoch))
                 epoch += 1
 
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
+                pdb.set_trace()
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
@@ -446,9 +447,9 @@ def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
         options = vars(options)
     fName, directory = cu.splitFileName(options['model_dir'])
     gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig(), chainedPrefix=prefix)
-    gh.importSavedNN(fName, gradientFlag=gradientFlag)
     outPipeline, inPipeline = getPipelines(options)
     gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline)
+    gh.importSavedNN(fName, gradientFlag=gradientFlag)
     return gh
 
 
@@ -521,6 +522,9 @@ def main(_):
             chained = loadChained(optionDict)
             dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
                                                                                         chainedModel=chained)
+            outPipeline, inPipeline = getPipelines(optionDict)
+            cnn.inputPipeline = inPipeline
+            cnn.pipeline = outPipeline
             trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
                     chainedModel=cnn.chainedModel)
 
@@ -548,10 +552,10 @@ def main(_):
         else:
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
             testX, _ = dh.getTestData()
-            if(len(testX.shape)>2):
+            if (len(testX.shape) > 2):
                 testX = testX[:, :, :, :optionDict['conv_ir_depth']]
             dh.getNextBatch()
-            if (len(testX.shape) >2):
+            if (len(testX.shape) > 2):
                 trainX = dh.trainData['input'][:, :, :, :optionDict['conv_ir_depth']]
             else:
                 trainX = dh.trainData['input']
