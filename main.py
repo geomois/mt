@@ -184,6 +184,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             epoch = 0
             # testX = np.random.random(testX.shape)
             # testY = np.random.random(testY.shape)
+            # pdb.set_trace()
             inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
                                                                          outPipeline=network.pipeline)
             while epoch < max_steps:
@@ -247,7 +248,9 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
 
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
-                pdb.set_trace()
+                der = sess.run(gradient, feed_dict={x_pl: np.vstack(dataHandler.trainData['input'], testX)})
+                folder = optionDict['checkpoint_dir'] + modelName
+                np.save(folder + "/" + "fullRawDerivatives.npy", der)
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
@@ -288,7 +291,6 @@ def setupChainedModel(chainedModelDict, useDataHandler=False):
 
 def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
     der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX.shape)
-    pdb.set_trace()
     if (save):
         if (folder is None):
             folder = optionDict['checkpoint_dir'] + modelName
@@ -420,7 +422,7 @@ def savePipeline(pipeline, mode):
         else:
             pref = 'out_'
         pipelinePath = pipelinePath + '/' + pref + "pipeline.pkl"
-        joblib.dump(pipeline, pipelinePath, compress=1)
+        joblib.dump(pipeline, pipelinePath)
 
     return pipelinePath
 
@@ -560,7 +562,7 @@ def main(_):
             else:
                 trainX = dh.trainData['input']
             inPut = np.vstack((trainX, testX))
-            pdb.set_trace()
+            # pdb.set_trace()
             deriv = gh.run(inPut, gh.gradientOp)
             path = optionDict['checkpoint_dir'] if optionDict['checkpoint_dir'] != CHECKPOINT_DIR_DEFAULT else None
             transformDerivatives(deriv, dh, inPut, path)
@@ -713,12 +715,11 @@ if __name__ == '__main__':
             # Keep calibration related input
             optionDict['currency'] = OPTIONS.currency
             optionDict['irType'] = OPTIONS.irType
-            pdb.set_trace()
-
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))
     else:
         optionDict = vars(OPTIONS)
+
     modelName = buildModelName(ps=optionDict['predictiveShape'], cr=optionDict['channel_range'],
                                cm=optionDict['chained_model'], suff=optionDict['suffix'], nn=optionDict['nn_model'],
                                arch=optionDict['architecture'], bw=optionDict['batch_width'],

@@ -92,9 +92,9 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            # temp.append(np.abs(np.average(derivative[j])))
+            temp.append(np.average(derivative[j]))
             # temp.append(np.average(derivative[j]))
-            temp.append(np.sum(derivative[j]))
+            # temp.append(np.sum(derivative[j]))
             # temp.append(np.average(np.abs(derivative[j])))
         # der = np.vstack((der, temp))
         # der[i] = np.abs(temp)
@@ -151,7 +151,8 @@ def load_obj(name):
 
 
 def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_vol.csv', targetDataPath=None,
-                    targetDataMode=None, specialFilePrefix=None,predictiveShape=None, volDepth=156, irDepth=44, width=30):
+                    targetDataMode=None, specialFilePrefix=None, predictiveShape=None, volDepth=156, irDepth=44,
+                    width=30):
     import utils.dataHandler as dh
     # argetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
     # targetDataMode = 'deltair'
@@ -162,7 +163,8 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     # targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair', \
     # specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
-                        useDataPointers=False, save=True,predictiveShape=predictiveShape, specialFilePrefix=specialFilePrefix,
+                        useDataPointers=False, save=True, predictiveShape=predictiveShape,
+                        specialFilePrefix=specialFilePrefix,
                         targetDataPath=targetDataPath, targetDataMode=targetDataMode)
     if (scaleParams):
         dd.readData(dd.dataFileName)

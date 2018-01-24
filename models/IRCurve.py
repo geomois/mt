@@ -122,7 +122,7 @@ class IRCurve(du.TimeSeriesData):
         return fw
 
     def calibrateStatic(self):
-        # import statsmodels.api as sm
+        import statsmodels.api as sm
         lr = LinearRegression()
         curves = np.asarray(self.getAll())
         irPre = curves[:, :curves.shape[1] - 1]
@@ -130,11 +130,11 @@ class IRCurve(du.TimeSeriesData):
         levelParams = []
         print("Fitting params")
         for i in range(irPre.shape[0]):
-            lr.fit(irPre[i, :50].reshape(-1, 1), irAft[i, :50].reshape(-1, 1))
-            levelParams.append([lr.coef_[0, 0], lr.intercept_[0]])
-            # ls = sm.OLS(irPre[i, :300].reshape(-1, 1), irAft[i, :300].reshape(-1, 1))
-            # res = ls.fit()
-            # levelParams.append([res.params[0], res.bse[0]])
+            # lr.fit(irPre[i, :50].reshape(-1, 1), irAft[i, :50].reshape(-1, 1))
+            # levelParams.append([lr.coef_[0, 0], lr.intercept_[0]])
+            ls = sm.OLS(irPre[i, :50].reshape(-1, 1), irAft[i, :50].reshape(-1, 1))
+            res = ls.fit()
+            levelParams.append([res.params[0], res.bse[0]])
             # pdb.set_trace()
             # res = ls.fit_regularized(alpha=0.00001)
             # levelParams.append(res.params[0])

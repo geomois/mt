@@ -50,9 +50,9 @@ class GraphHandler(object):
             self.outputPlaceholder = y_pl
             self.session.run(tf.global_variables_initializer())
             if (gradientFlag):
-                # self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
-                loss = self.model.loss(self.predictOperation, y_pl)
-                self.gradientOp = tf.gradients(loss, [self.inputPlaceholder, self.outputPlaceholder])
+                self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
+                # loss = self.model.loss(self.predictOperation, y_pl)
+                # self.gradientOp = tf.gradients(loss, [self.inputPlaceholder, self.outputPlaceholder])
             self._delegateModelParams()
 
     def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None):

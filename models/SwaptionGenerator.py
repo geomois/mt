@@ -674,6 +674,8 @@ class SwaptionGen(du.TimeSeriesData):
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
             if (type(params) == list):
+                pdb.set_trace()
+                params=[[-0.01,params[0][1]]]
                 self.model.setParams(ql.Array(params[0]))
             else:
                 self.model.setParams(ql.Array(params.tolist()[0]))

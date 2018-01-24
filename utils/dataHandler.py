@@ -188,6 +188,8 @@ class DataHandler(object):
     def initializePipelines(self, inputPipeline=None, outPipeline=None):
         if (self.predictive is not None and not self.transformed['train']):
             self._feedTransform('train')
+        if (self.predictive is not None and not self.transformed['test']):
+            self._feedTransform('test')
         if (self.delegatedFromFile):
             if (outPipeline is not None):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
@@ -312,7 +314,8 @@ class DataHandler(object):
             self.channelEnd = self.volDepth
         else:
             self.channelStart = self.volDepth + channelRange[0]
-            self.channelEnd = targetShape[3] if channelRange[1] <= 0 else self.channelStart + channelRange[1]
+            diff = channelRange[1] - channelRange[0]
+            self.channelEnd = targetShape[3] if channelRange[1] <= 0 else self.channelStart + diff
         if (outWidth > targetShape[2]):
             outWidth = targetShape[2]
         if (inWidth > targetShape[2]):
