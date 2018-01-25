@@ -251,7 +251,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                 der = sess.run(gradient, feed_dict={x_pl: np.vstack((dataHandler.trainData['input'], testX))})
                 folder = optionDict['checkpoint_dir'] + modelName
                 np.save(folder + "/" + "fullRawDerivatives.npy", der)
-                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
+#                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
         optionDict['pipeline'] = savePipeline(outPipeline, 'out')
