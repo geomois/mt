@@ -248,7 +248,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
 
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
-                der = sess.run(gradient, feed_dict={x_pl: np.vstack(dataHandler.trainData['input'], testX)})
+                der = sess.run(gradient, feed_dict={x_pl: np.vstack((dataHandler.trainData['input'], testX))})
                 folder = optionDict['checkpoint_dir'] + modelName
                 np.save(folder + "/" + "fullRawDerivatives.npy", der)
                 transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
