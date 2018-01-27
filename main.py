@@ -138,6 +138,25 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
     return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
 
 
+def getOptimizerOperation(loss, learningRate, global_step):
+    optimizer = OPTIMIZER_DICT[optionDict['optimizer']](learning_rate=learningRate)
+    opt = optimizer.minimize(loss, global_step=global_step)
+    return opt
+
+
+def getLearningrate(decay_rate, global_step):
+    if (decay_rate > 0):
+        learningRate = tf.train.exponential_decay(learning_rate=optionDict['learning_rate'],
+                                                  global_step=global_step,
+                                                  decay_steps=optionDict['decay_steps'],
+                                                  decay_rate=optionDict['decay_rate'],
+                                                  staircase=optionDict['decay_staircase'])
+    else:
+        learningRate = optionDict['learning_rate']
+
+    return learningRate
+
+
 def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None):
     # With chained models use already transformed data to avoid some complexity
     mergedSummaries = tf.summary.merge_all()
@@ -148,17 +167,11 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
         prevTestLoss = 1
         checkpointFolder = optionDict['checkpoint_dir'] + modelName + "/"
         timestamp = modelName + ''.join(str(dt.datetime.now().timestamp()).split('.'))
-        if (optionDict['decay_rate'] > 0):
-            learningRate = tf.train.exponential_decay(learning_rate=optionDict['learning_rate'],
-                                                      global_step=global_step,
-                                                      decay_steps=optionDict['decay_steps'],
-                                                      decay_rate=optionDict['decay_rate'],
-                                                      staircase=optionDict['decay_staircase'])
-        else:
-            learningRate = optionDict['learning_rate']
 
-        optimizer = OPTIMIZER_DICT[optionDict['optimizer']](learning_rate=learningRate)
-        opt = optimizer.minimize(loss, global_step=global_step)
+        learningRate = getLearningrate(optionDict['decay_rate'], global_step)
+        opt = getOptimizerOperation(loss, learningRate, global_step)
+        inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
+                                                                     outPipeline=network.pipeline)
 
         gradient = None
         if (optionDict['with_gradient']):
@@ -182,11 +195,8 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             ttS = time.time()
             max_steps = optionDict['max_steps'] + 1
             epoch = 0
-            # testX = np.random.random(testX.shape)
-            # testY = np.random.random(testY.shape)
             # pdb.set_trace()
-            inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
-                                                                         outPipeline=network.pipeline)
+
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
@@ -251,7 +261,7 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                 der = sess.run(gradient, feed_dict={x_pl: np.vstack((dataHandler.trainData['input'], testX))})
                 folder = optionDict['checkpoint_dir'] + modelName
                 np.save(folder + "/" + "fullRawDerivatives.npy", der)
-#                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
+        #                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
         optionDict['pipeline'] = savePipeline(outPipeline, 'out')
@@ -450,8 +460,8 @@ def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
     fName, directory = cu.splitFileName(options['model_dir'])
     gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig(), chainedPrefix=prefix)
     outPipeline, inPipeline = getPipelines(options)
-    gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline)
     gh.importSavedNN(fName, gradientFlag=gradientFlag)
+    gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline)
     return gh
 
 
@@ -522,13 +532,21 @@ def main(_):
         dh = setupDataHandler(optionDict)
         if optionDict['nn_model'] == 'cnn':
             chained = loadChained(optionDict)
-            dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
-                                                                                        chainedModel=chained)
-            outPipeline, inPipeline = getPipelines(optionDict)
-            cnn.inputPipeline = inPipeline
-            cnn.pipeline = outPipeline
-            trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
-                    chainedModel=cnn.chainedModel)
+            if optionDict['retrain']:
+                gh = setupNetwork(options=optionDict, gradientFlag=True)
+                with gh.graph.as_default():
+                    global_step = gh.graph.get_tensor_by_name('Variable:0')
+                    learningRate = getLearningrate(optionDict['decay_rate'], global_step)
+                    opt = getOptimizerOperation(gh.loss, learningRate, global_step)
+                gh.simpleRetrain(dh, learningRate, opt, optionDict, modelName)
+            else:
+                dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
+                                                                                            chainedModel=chained)
+                outPipeline, inPipeline = getPipelines(optionDict)
+                cnn.inputPipeline = inPipeline
+                cnn.pipeline = outPipeline
+                trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
+                        chainedModel=cnn.chainedModel)
 
         elif optionDict['nn_model'] == 'lstm':
             trainLSTM(dh)
@@ -594,6 +612,7 @@ def main(_):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--is_train', action='store_true', help='Train a model')
+    parser.add_argument('--retrain', action='store_true', help='Train a model')
     parser.add_argument('--dnn_hidden_units', type=str, default=DNN_HIDDEN_UNITS_DEFAULT,
                         help='Comma separated list of number of units in each hidden layer')
     parser.add_argument('-bw', '--batch_width', type=int, default=BATCH_WIDTH_DEFAULT,
@@ -705,11 +724,13 @@ if __name__ == '__main__':
                 optionDict['input_pipeline'] = OPTIONS.chained_pipeline
                 optionDict['use_input_pipeline'] = True
             optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
-            optionDict['irFileName'] = OPTIONS.irFileName
+            optionDict['irFileName'] = OPTIONS.irFileName if OPTIONS.irFileName is not None else optionDict[
+                'irFileName']
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
             optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
             optionDict['is_train'] = OPTIONS.is_train
+            optionDict['retrain'] = OPTIONS.retrain
             optionDict['compare'] = OPTIONS.compare
             optionDict['calculate_gradient'] = OPTIONS.calculate_gradient
             # Keep calibration related input

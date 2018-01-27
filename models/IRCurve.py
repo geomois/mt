@@ -51,6 +51,13 @@ class IRCurve(du.TimeSeriesData):
         # pdb.set_trace()
         return ql.MonotonicCubicZeroCurve(dates, values, self._daycounter)
 
+    def curveimpl(self, refdate, values):
+        self.values = values
+        ql.Settings.instance().evaluationDate = refdate
+        dates = [refdate + int(d) for d in self.axis(0)]
+        # pdb.set_trace()
+        return ql.MonotonicCubicZeroCurve(dates, values, self._daycounter)
+
     def calcForward(self, path=None, futureIncrementInDays=365):
         fwCurves = pd.DataFrame(columns=["Date", "FutureDate", "Tenor", "Rate"])
         levels = np.asarray(self._levels)[0]

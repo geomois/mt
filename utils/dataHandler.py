@@ -76,7 +76,7 @@ class DataHandler(object):
         if (len(self.testData["input"]) == 0):
             batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
             self.splitTestData(batchSize=batchSize, width=width, volDepth=volDepth, irDepth=irDepth)
-        if (self.predictive is not None):
+        if (self.predictive is not None and not self.transformed['test']):
             self._feedTransform('test')
         assert (len(self.testData["input"]) > 0 and len(self.testData["output"]) > 0), "Test data not present"
         if (self.saveProcessedData):
@@ -197,14 +197,6 @@ class DataHandler(object):
                 for i in range(np.asarray(self.trainData["input"]).shape[3]):
                     self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
                         self.trainData["input"][:, 0, :, i])
-
-        # if (self.predictive is not None and not self.transformed['train']):
-        #     self._feedTransform('train')
-        # if (self.delegatedFromFile and pipeline.steps[1][1] is not None):
-        #     self.trainData["input"] = pipeline.fit_transform(self.trainData["input"])
-        # else:
-        #     pass
-        #     # raise Exception("Only data delegated from file can use pipeline")
         return inputPipeline, outPipeline
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):

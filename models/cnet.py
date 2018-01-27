@@ -203,13 +203,13 @@ class ConvNet(object):
     def setInputPipelineList(self, plist):
         self.inputPipelineList = plist
 
-    def getCurrentPipeline(self, index):
-        if (len(self.pipelineList) > 1):
+    def getCurrentPipeline(self, index=None):
+        if (len(self.pipelineList) > 1 and index is not None):
             self.pipeline = self.pipelineList[index]
         return self.pipeline
 
-    def getCurrentInputPipeline(self, index):
-        if (len(self.inputPipelineList) > 1):
+    def getCurrentInputPipeline(self, index=None):
+        if (len(self.inputPipelineList) > 1 and index is not None):
             self.inputPipeline = self.inputPipelineList[index]
         return self.inputPipeline
 
