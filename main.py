@@ -1,4 +1,4 @@
-import argparse, os, time, sys, pdb
+import argparse, os, time, sys, pdb, simulate
 import tensorflow as tf
 from graphHandler import GraphHandler
 from models.cnet import ConvNet
@@ -98,9 +98,9 @@ def trainLSTM(dataHandler):
 
 
 def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
+    if (optionDict['architecture'][0] == 'd'):
+        dataHandler.forceSimplify()
     testX, testY = dataHandler.getTestData()
-    # testX = testX[:,:1]
-    # testY = testY[:,:1]
     chained_pl = None
     if chainedModel is not None:
         chained_pl = chainedModel['placeholder']
@@ -504,6 +504,25 @@ def loadChained(options):
     return chained
 
 
+def loadMultipleNetworks():
+    ghList = []
+    channelRange = []
+    pipelineList = None
+    for j in range(len(optionList)):
+        optionList[j]['conv_ir_depth'] = 1
+        temp = setupNetwork(options=optionList[j], gradientFlag=True)
+        if (optionList[j]['use_input_pipeline'] and optionList[j]['input_pipeline'] is not None):
+            pipelineList = cu.loadSavedScaler(optionList[1]['input_pipeline'])
+            temp.model.setInputPipelineList(pipelineList)
+        if (len(optionList[j]['channel_range']) > 1):
+            channelRange.append([int(optionList[j]['channel_range'][0]),
+                                 int(optionList[j]['channel_range'][1])])
+        else:
+            channelRange.append([0, int(optionList[j]['channel_range'][0])])
+        ghList.append(temp)
+    return ghList
+
+
 def main(_):
     _ = get_options()
     initDirectories()
@@ -553,31 +572,28 @@ def main(_):
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
+
+    if optionDict['simulate']:
+        swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+        if (optionList is not None):
+            gh = loadMultipleNetworks()
+        else:
+            gh = setupNetwork(options=optionDict, gradientFlag=True)
+            if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
+                pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+                gh.model.setInputPipelineList(pipelineList)
+        simulate.runSimulations(gh, modelName, swo, optionDict['batch_width'])
+
     if optionDict['calculate_gradient']:
         if optionDict['calibrate_sigma']:
             swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
             if (optionList is not None):
-                ghList = []
-                channelRange = []
-                pipelineList = None
-                for j in range(len(optionList)):
-                    optionList[j]['conv_ir_depth'] = 1
-                    temp = setupNetwork(options=optionList[j], gradientFlag=True)
-                    if (optionList[j]['use_input_pipeline'] and optionList[j]['input_pipeline'] is not None):
-                        pipelineList = cu.loadSavedScaler(optionList[1]['input_pipeline'])
-                        temp.model.setInputPipelineList(pipelineList)
-                    if (len(optionList[j]['channel_range']) > 1):
-                        channelRange.append([int(optionList[j]['channel_range'][0]),
-                                             int(optionList[j]['channel_range'][1])])
-                    else:
-                        channelRange.append([0, int(optionList[j]['channel_range'][0])])
-                    ghList.append(temp)
-                gh = ghList
+                gh = loadMultipleNetworks()
             else:
                 gh = setupNetwork(options=optionDict, gradientFlag=True)
-                # if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
-                #     pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
-                #     gh.model.setInputPipelineList(pipelineList)
+                if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
+                    pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+                    gh.model.setInputPipelineList(pipelineList)
                 if (len(optionDict['channel_range']) > 1):
                     channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
                 else:
@@ -585,9 +601,9 @@ def main(_):
 
             sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'],
                                          skip=optionDict['skip'], part=channelRange)
-            folder = optionDict['checkpoint_dir'] + modelName + "/"
+            ffolder = optionDict['checkpoint_dir'] + modelName + "/"
             try:
-                np.save(folder + "sigmas.npy", sigmas)
+                np.save(ffolder + "sigmas.npy", sigmas)
             except:
                 np.save(optionDict['suffix'] + 'sigmas.npy', sigmas)
         else:
@@ -743,6 +759,7 @@ if __name__ == '__main__':
     parser.add_argument('-chain', '--chained_model', type=str, default=None,
                         help="Loads model defined in file and chains it with the current nn model")
     parser.add_argument('--load_multiple', type=int, default=0, help="Load multiple models")
+    parser.add_argument('--simulate', action='store_true', help="Run simulations")
 
     OPTIONS, unparsed = parser.parse_known_args()
     if (OPTIONS.load_multiple > 0):
@@ -776,6 +793,7 @@ if __name__ == '__main__':
             # Keep calibration related input
             optionDict['currency'] = OPTIONS.currency
             optionDict['irType'] = OPTIONS.irType
+            optionDict['simulate'] = OPTIONS.simulate
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))
     else:

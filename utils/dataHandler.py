@@ -194,9 +194,13 @@ class DataHandler(object):
             if (outPipeline is not None):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
             if (inputPipeline is not None):
+                tt = self.trainData['input']
+                tt = tt.reshape((-1, tt.shape[2]))
+                inputPipeline = inputPipeline.fit(tt)
                 for i in range(np.asarray(self.trainData["input"]).shape[3]):
-                    self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
-                        self.trainData["input"][:, 0, :, i])
+                    # self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
+                    #     self.trainData["input"][:, 0, :, i])
+                    self.trainData["input"][:, 0, :, i] = inputPipeline.transform(self.trainData["input"][:, 0, :, i])
         return inputPipeline, outPipeline
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):
@@ -454,10 +458,22 @@ class DataHandler(object):
         inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
         return inPut
 
+    def forceSimplify(self):
+        if (self.predictive is not None and not self.transformed['train']):
+            self._feedTransform('train')
+            self.trainData['input'] = self._simplify(self.trainData['input'])
+            self.trainData['output'] = self._simplify(self.trainData['output'])
+        if (self.predictive is not None and not self.transformed['test']):
+            self._feedTransform('test')
+            self.testData['input'] = self._simplify(self.testData['input'])
+            self.testData['output'] = self._simplify(self.testData['output'])
+
     def _simplify(self, x):
         if (len(x.shape) > 3):
             if (x.shape[1] == 1 and x.shape[2] == 1):
                 x = x.reshape(x.shape[0], x.shape[3])
+            if (x.shape[1] == 1 and x.shape[3] == 1):
+                x = x.reshape(x.shape[0], x.shape[2])
         return x
 
     def _buildBatch(self, width, volDepth, irDepth, pointers=True):
