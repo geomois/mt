@@ -82,6 +82,7 @@ IR_MODEL = {'hullwhite': hullwhite_analytic,
 OPTIONS = None
 optionDict = None
 modelName = None
+optionList = None
 tf.set_random_seed(42)
 np.random.seed(42)
 
@@ -552,24 +553,46 @@ def main(_):
             trainLSTM(dh)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
-
     if optionDict['calculate_gradient']:
-        gh = setupNetwork(options=optionDict, gradientFlag=True)
         if optionDict['calibrate_sigma']:
-            if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
-                pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
-                gh.model.setInputPipelineList(pipelineList)
-
             swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
-            if (len(optionDict['channel_range']) > 1):
-                channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
+            if (optionList is not None):
+                ghList = []
+                channelRange = []
+                pipelineList = None
+                if (optionList[0]['use_input_pipeline'] and optionList[0]['input_pipeline'] is not None):
+                    pipelineList = cu.loadSavedScaler(optionList[0]['input_pipeline'])
+                for j in range(len(optionList)):
+                    optionList[j]['conv_ir_depth'] = 1
+                    temp = setupNetwork(options=optionList[j], gradientFlag=True)
+                    if (pipelineList is not None):
+                        temp.model.setInputPipelineList(pipelineList)
+                    if (len(optionList[j]['channel_range']) > 1):
+                        channelRange.append([int(optionList[j]['channel_range'][0]),
+                                             int(optionList[j]['channel_range'][1])])
+                    else:
+                        channelRange.append([0, int(optionList[j]['channel_range'][0])])
+                    ghList.append(temp)
+                gh = ghList
             else:
-                channelRange = [0, int(optionDict['channel_range'][0])]
-            sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'], skip=optionDict['skip'],
-                                         part=channelRange)
+                gh = setupNetwork(options=optionDict, gradientFlag=True)
+                # if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
+                #     pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+                #     gh.model.setInputPipelineList(pipelineList)
+                if (len(optionDict['channel_range']) > 1):
+                    channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
+                else:
+                    channelRange = [0, int(optionDict['channel_range'][0])]
+
+            sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'],
+                                         skip=optionDict['skip'], part=channelRange)
             folder = optionDict['checkpoint_dir'] + modelName + "/"
-            np.save(folder + "sigmas.npy", sigmas)
+            try:
+                np.save(folder + "sigmas.npy", sigmas)
+            except:
+                np.save(optionDict['suffix'] + 'sigmas.npy', sigmas)
         else:
+            gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
             testX, _ = dh.getTestData()
             if (len(testX.shape) > 2):
@@ -607,6 +630,12 @@ def main(_):
                 np.save("Values.npy", values)
                 np.save("Vals.npy", vals)
                 np.save("Params.npy", params)
+
+
+def loadOptions(path):
+    file, model = cu.splitFileName(path)
+    opts = cu.load_obj(model + '/options.pkl')
+    return opts
 
 
 if __name__ == '__main__':
@@ -714,9 +743,20 @@ if __name__ == '__main__':
     parser.add_argument('--load_options', action='store_true', help="Load options from file")
     parser.add_argument('-chain', '--chained_model', type=str, default=None,
                         help="Loads model defined in file and chains it with the current nn model")
+    parser.add_argument('--load_multiple', type=int, default=0, help="Load multiple models")
 
     OPTIONS, unparsed = parser.parse_known_args()
-    if (OPTIONS.load_options):
+    if (OPTIONS.load_multiple > 0):
+        fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
+        m = str(model_dir).split("_cnn_")
+        m[0] = m[0][:len(m) - 5]
+        optionList = []
+        for i in range(OPTIONS.load_multiple - 1):
+            folder = ''.join([m[0], str(i) + "_" + str(i + 1), '_cnn_', m[1]]) + str(fileName)
+            optionList.append(loadOptions(folder))
+            optionList[i]['model_dir'] = folder
+
+    if (OPTIONS.load_options and OPTIONS.load_multiple == 0):
         try:
             fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
             optionDict = cu.load_obj(model_dir + '/options.pkl')
@@ -728,6 +768,7 @@ if __name__ == '__main__':
                 'irFileName']
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
+            optionDict['calibrate_sigma'] = OPTIONS.calibrate_sigma
             optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
             optionDict['is_train'] = OPTIONS.is_train
             optionDict['retrain'] = OPTIONS.retrain
@@ -740,7 +781,6 @@ if __name__ == '__main__':
             raise Exception("Exception loading option from file:" + str(ex))
     else:
         optionDict = vars(OPTIONS)
-
     modelName = buildModelName(ps=optionDict['predictiveShape'], cr=optionDict['channel_range'],
                                cm=optionDict['chained_model'], suff=optionDict['suffix'], nn=optionDict['nn_model'],
                                arch=optionDict['architecture'], bw=optionDict['batch_width'],

@@ -149,6 +149,22 @@ class IRCurve(du.TimeSeriesData):
         pdb.set_trace()
         return levelParams[:, 0], levelParams[:, 1]
 
+    def calibrateStaticAlpha(self, start, end):
+        lr = LinearRegression()
+        curves = np.asarray(self.getAll())
+        irPre = curves[:, :curves.shape[1] - 1]
+        irAft = curves[:, 1:]
+        if end > irAft.shape[1]:
+            end = irAft.shape[1]
+            start = irAft.shape[1] - 80
+        levelParams = []
+        print("Fitting params")
+        for i in range(irPre.shape[0]):
+            lr.fit(irPre[i, start:end].reshape(-1, 1), irAft[i, start:end].reshape(-1, 1))
+            levelParams.append(lr.coef_[0, 0])
+        levelParams = np.average(1 - np.asarray(levelParams))
+        return levelParams
+
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
     def calcThetaHW(self, path=None):
         thetaFrame = pd.DataFrame(columns=["Date", "Term", "Value"])

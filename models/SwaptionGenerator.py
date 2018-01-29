@@ -571,6 +571,7 @@ class SwaptionGen(du.TimeSeriesData):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         outcome = []
+        outcomeStatic = []
         store.close()
         part = [0, len(self.helpers)] if part == -1 else part
         self.refdate = ql.Date(1, 1, 1901)
@@ -588,8 +589,10 @@ class SwaptionGen(du.TimeSeriesData):
         constraint = ql.PositiveConstraint()
         self.set_date(dates[0])
         dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
-        # pdb.set_trace()
         for i, ddate in enumerate(dates):
+            if (skip == -1):
+                if (i % 80 == 0):
+                    alpha = self._ircurve.calibrateStaticAlpha(i, i + 80)
             if (i < skip):
                 if (i + dataLength - 1 >= skip):
                     self.set_date(ddate)
@@ -607,7 +610,14 @@ class SwaptionGen(du.TimeSeriesData):
             else:
                 dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
                 dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
-                params = predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir'])
+                if (type(predictive_model) == list):
+                    out = []
+                    for j in range(len(predictive_model)):
+                        out.append(predictive_model[j].predict(vol=dataDict['vol'], ir=dataDict['ir'][:, j:j + 1])[0])
+                    params = np.abs(np.average(out)).reshape((-1, 1))
+                else:
+                    params = np.abs(predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir']))
+
                 dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
                 dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
@@ -619,12 +629,26 @@ class SwaptionGen(du.TimeSeriesData):
             paramsC = self.model.params()
             paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
             outcome.append(paramsC)
+
+            if (skip == -1):
+                params = [[alpha, 0]]  # shape (1,2)
+                self.model.setParams(ql.Array(params[0]))
+                self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])
+                meanErrorAfterStatic, _ = self.__errors(part=part)
+                paramsCStatic = self.model.params()
+                paramsCStatic = np.append(np.asarray(paramsCStatic), meanErrorAfterStatic)
+                outcomeStatic.append(paramsCStatic)
+                print(i, ' Pred model: ', paramsC, "Static: ", paramsCStatic, '\n')
+            else:
+                print(i, paramsC, '\n')
             # print('\n', i, paramsC, '\n')
             # try:
             #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
             # except RuntimeError:
             #     objectiveAfter = np.nan
-            print('\n', i, paramsC, '\n')
+
+        if (len(outcomeStatic) > 1):
+            np.save("sigmaStatic30.npy", outcomeStatic)
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,
@@ -675,7 +699,7 @@ class SwaptionGen(du.TimeSeriesData):
 
             if (type(params) == list):
                 pdb.set_trace()
-                params=[[-0.01,params[0][1]]]
+                params = [[-0.01, params[0][1]]]
                 self.model.setParams(ql.Array(params[0]))
             else:
                 self.model.setParams(ql.Array(params.tolist()[0]))
@@ -763,6 +787,7 @@ class SwaptionGen(du.TimeSeriesData):
             f2.plot(r, vals[:, 1])
             plt.savefig(modelName + '.png')
         return (dates, values, vals, paramsList)
+
 
 def get_swaptiongen(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNode=du.h5_ts_node,
                     volFileName=None, irFileName=None):

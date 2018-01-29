@@ -261,7 +261,10 @@ class ConvNet(object):
                     x = self.npToTfFunc(func, x)
                 else:
                     x[:, i] = func(x[:, i])
-            x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
+            try:
+                x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
+            except:
+                x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i:i + 1].T)
         return x
 
     @staticmethod
@@ -300,7 +303,6 @@ class ConvNet(object):
                 x = np.hstack((x, np.float32(ir[:, :self.irChannels])))
             else:
                 x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
-
         if (len(self.inputPipelineList) > 0 or self.inputPipeline is not None):
             x = self.applyPipeLine('transform', x, 'input', useTf=False)
         x = x.reshape((1, 1, x.shape[0], x.shape[1]))
@@ -310,6 +312,7 @@ class ConvNet(object):
             out = sess.run(self.outOp, feed_dict={x_pl: x})
 
         if (self.derive):
+            # pdb.set_trace()
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
             if (len(self.pipelineList) > 0 or self.pipeline is not None):

@@ -63,7 +63,6 @@ class GraphHandler(object):
             self.model = self.modelType(volChannels=optionDict['conv_vol_depth'],
                                         irChannels=optionDict['conv_ir_depth'],
                                         pipeline=outPipeline, inPipeline=inPipeline)
-            self.predictOperation = self.model.inference(self.inputPlaceholder)
             self.loss = self.model.loss(self.predictOperation, self.outputPlaceholder)
             self._delegateModelParams()
 

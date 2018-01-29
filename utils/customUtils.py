@@ -81,7 +81,7 @@ def getImpliedForwardCurve(futureDate, curve):
 
 def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     derivative = np.asarray(derivative[0])
-    pdb.set_trace()
+    # pdb.set_trace()
     step = channelEnd - channelStart
     if (xShape[3] is not 1):
         derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
@@ -92,9 +92,10 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            temp.append(np.average(derivative[j]))
+            # pdb.set_trace()
+            temp.append(np.sum(derivative[j]))
             # temp.append(np.average(derivative[j]))
-            # temp.append(np.sum(derivative[j]))
+            # temp.append(np.sum(np.abs(derivative[j])))
             # temp.append(np.average(np.abs(derivative[j])))
         # der = np.vstack((der, temp))
         # der[i] = np.abs(temp)
@@ -115,6 +116,14 @@ def reshapeMultiple(array, depth, start, end):
 
 
 def loadSavedScaler(path, identifier=None):
+    if (os.path.isfile(path)):
+        temp = joblib.load(path)
+        if (type(temp) == StandardScaler or type(temp) == MinMaxScaler):
+            transformFunc = FunctionTransformerWithInverse(func=None, inv_func=None)
+            pp = Pipeline([('funcTrm', transformFunc), ('scaler', temp)])
+            return pp
+        return None
+
     pklList = []
     for subdir, dirs, files in os.walk(path):
         for f in files:
@@ -159,9 +168,7 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     # specialFilePrefix = '_perTermSTANDARD_pfw365_'
     # example:
     # import utils.customUtils as cu
-    # cu.prepareProcData(scaleParams=False, dataFileName='data/ownData/AH_eonia2005_ir.csv', \
-    # targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair', \
-    # specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
+    # cu.prepareProcData(scaleParams=False, dataFileName='data/ownData/AH_eonia2005_ir.csv',targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair',specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
                         useDataPointers=False, save=True, predictiveShape=predictiveShape,
                         specialFilePrefix=specialFilePrefix,
