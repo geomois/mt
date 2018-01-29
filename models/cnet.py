@@ -201,7 +201,12 @@ class ConvNet(object):
         self.pipelineList = plist
 
     def setInputPipelineList(self, plist):
-        self.inputPipelineList = plist
+        if (type(plist) == list):
+            self.inputPipelineList = plist
+            self.inputPipeline = None
+        else:
+            self.inputPipelineList = []
+            self.inputPipeline = plist
 
     def getCurrentPipeline(self, index=None):
         if (len(self.pipelineList) > 1 and index is not None):
@@ -264,7 +269,10 @@ class ConvNet(object):
             try:
                 x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i].reshape((-1, 1)))[:, 0]
             except:
-                x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i:i + 1].T)
+                try:
+                    x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x[:, i:i + 1].T)
+                except:
+                    x[:,i] = self._getTransformationFunction(tType,'scale',pp)(x.T)
         return x
 
     @staticmethod

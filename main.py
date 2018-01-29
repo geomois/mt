@@ -560,12 +560,11 @@ def main(_):
                 ghList = []
                 channelRange = []
                 pipelineList = None
-                if (optionList[0]['use_input_pipeline'] and optionList[0]['input_pipeline'] is not None):
-                    pipelineList = cu.loadSavedScaler(optionList[0]['input_pipeline'])
                 for j in range(len(optionList)):
                     optionList[j]['conv_ir_depth'] = 1
                     temp = setupNetwork(options=optionList[j], gradientFlag=True)
-                    if (pipelineList is not None):
+                    if (optionList[j]['use_input_pipeline'] and optionList[j]['input_pipeline'] is not None):
+                        pipelineList = cu.loadSavedScaler(optionList[1]['input_pipeline'])
                         temp.model.setInputPipelineList(pipelineList)
                     if (len(optionList[j]['channel_range']) > 1):
                         channelRange.append([int(optionList[j]['channel_range'][0]),
