@@ -1,13 +1,13 @@
 import tensorflow as tf
 import numpy as np
-from models.cnet import *
+from models.neuralNet import *
 import pdb, time
 
 
 class GraphHandler(object):
     def __init__(self, modelPath, modelType, sessConfig, chainedPrefix=""):
         if (modelType.lower() == 'cnn'):
-            self.modelType = ConvNet
+            self.modelType = NeuralNet
         else:
             self.modelType = None
         self.modelPath = modelPath

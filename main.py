@@ -1,7 +1,7 @@
 import argparse, os, time, sys, pdb, simulate
 import tensorflow as tf
 from graphHandler import GraphHandler
-from models.cnet import ConvNet
+from models.neuralNet import NeuralNet
 import models.SwaptionGenerator as swg
 import models.IRCurve as irc
 from utils.ahUtils import *
@@ -22,15 +22,15 @@ MAX_STEPS_DEFAULT = 600
 DROPOUT_RATE_DEFAULT = 0.2
 TEST_FREQUENCY_DEFAULT = 300
 CHECKPOINT_FREQ_DEFAULT = 500
-DNN_HIDDEN_UNITS_DEFAULT = '100'
+LSTM_UNITS_DEFAULT = '44'
 BATCH_WIDTH_DEFAULT = 30
 CONVOLUTION_VOL_DEPTH_DEFAULT = 156
 CONVOLUTION_IR_DEPTH_DEFAULT = 44
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
-OPTIMIZER_DEFAULT = 'sgd'
-FULLY_CONNECTED_NODES_DEFAULT = ['2']
+OPTIMIZER_DEFAULT = 'adagrad'
+NUMBER_OF_NODES = ['2']
 DEFAULT_ARCHITECTURE = ['c', 'f', 'd']
 GPU_MEMORY_FRACTION = 0.3
 # endregion NNDefaultConstants
@@ -87,18 +87,8 @@ tf.set_random_seed(42)
 np.random.seed(42)
 
 
-def trainLSTM(dataHandler):
-    tf.set_random_seed(42)
-    np.random.seed(42)
-    if optionDict['.dnn_hidden_units']:
-        dnn_hidden_units = optionDict['.dnn_hidden_units'].split(",")
-        dnn_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in dnn_hidden_units]
-    else:
-        dnn_hidden_units = []
-
-
-def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
-    if (optionDict['architecture'][0] == 'd'):
+def buildNN(dataHandler, swaptionGen=None, chainedModel=None):
+    if (optionDict['architecture'][0] == 'd' or 'l' in optionDict['architecture'][0]):
         dataHandler.forceSimplify()
     testX, testY = dataHandler.getTestData()
     chained_pl = None
@@ -106,15 +96,19 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
         chained_pl = chainedModel['placeholder']
 
     print("Input dims" + str(testX.shape))
-    if (int(optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1]) != testY.shape[1]):
+    if (int(optionDict['nodes'][len(optionDict['nodes']) - 1]) != testY.shape[1]):
         print("LAST fcNodes DIFFERENT SHAPE FROM DATA TARGET")
         print("Aligning...")
-        optionDict['fullyConnectedNodes'][len(optionDict['fullyConnectedNodes']) - 1] = testY.shape[1]
+        optionDict['nodes'][len(optionDict['nodes']) - 1] = testY.shape[1]
     print("Output dims" + str((None, testY.shape[1])))
-    if len(testX.shape) < 3:
-        x_pl = tf.placeholder(tf.float32, shape=(None, testX.shape[1]), name="x_pl")
-    else:
-        x_pl = tf.placeholder(tf.float32, shape=(None, 1, testX.shape[2], testX.shape[3]), name="x_pl")
+    if len(testX.shape) == 2:
+        xShape = (None, testX.shape[1])
+    elif (len(testX.shape) == 3):
+        xShape = (None, testX.shape[1], testX.shape[2])
+    elif (len(testX.shape) == 4):
+        xShape = (None, 1, testX.shape[2], testX.shape[3])
+
+    x_pl = tf.placeholder(tf.float32, shape=xShape, name="x_pl")
     y_pl = tf.placeholder(tf.float32, shape=(None, testY.shape[1]), name="y_pl")
     poolingFlag = tf.placeholder(tf.bool)
     pipeline = None
@@ -125,18 +119,18 @@ def buildCnn(dataHandler, swaptionGen=None, chainedModel=None):
         activation = [ACTIVATION_DICT[ACTIVATION_DEFAULT]]
         pass
 
-    cnn = ConvNet(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
-                  poolingLayerFlag=poolingFlag, inPipeline=inPP, pipeline=outPP,
-                  architecture=optionDict['architecture'], fcUnits=optionDict['fullyConnectedNodes'],
-                  activationFunctions=activation, chainedModel=chainedModel,
-                  calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
+    nn = NeuralNet(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
+                   poolingLayerFlag=poolingFlag, inPipeline=inPP, pipeline=outPP,
+                   architecture=optionDict['architecture'], units=optionDict['nodes'],
+                   activationFunctions=activation, chainedModel=chainedModel,
+                   calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
 
-    pred = cnn.inference(x_pl, chained_pl)
+    pred = nn.inference(x_pl, chained_pl)
     tf.add_to_collection("predict", pred)
-    loss = cnn.loss(pred, y_pl)
+    loss = nn.loss(pred, y_pl)
     tf.add_to_collection("loss", loss)
 
-    return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn
+    return dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, nn
 
 
 def getOptimizerOperation(loss, learningRate, global_step):
@@ -159,7 +153,7 @@ def getLearningrate(decay_rate, global_step):
 
 
 def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedModel=None):
-    # With chained models use already transformed data to avoid some complexity
+    # With chained models use already transformed/preprocessed data to avoid some complexity
     mergedSummaries = tf.summary.merge_all()
     saver = tf.train.Saver()
     inputPipeline = outPipeline = None
@@ -201,8 +195,6 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             while epoch < max_steps:
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
-                # batch_x = batch_x[:,:1]
-                # batch_y = batch_y[:,:1]
                 if (chainedModel is not None):
                     chained_train_x, _ = chainedDH.getNextBatch()
                     cOut = gh.run(op=gh.gradientOp, data=chained_train_x)
@@ -230,8 +222,13 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                             testY = outPipeline.transform(testY)
                         if (inputPipeline is not None):
                             print("Transforming testX")
-                            for i in range(np.asarray(testX).shape[3]):
-                                testX[:, 0, :, i] = inputPipeline.transform(testX[:, 0, :, i])
+                            if (len(testX.shape) == 3):
+                                for i in range(np.asarray(testX).shape[2]):
+                                    testX[:, :, i] = inputPipeline.transform(testX[:, :, i])
+
+                            elif (len(testX.shape) == 4):
+                                for i in range(np.asarray(testX).shape[3]):
+                                    testX[:, 0, :, i] = inputPipeline.transform(testX[:, 0, :, i])
                     # pdb.set_trace()
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
@@ -267,10 +264,15 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
         optionDict['pipeline'] = savePipeline(outPipeline, 'out')
         opts = get_options(False, modelDir=checkpointFolder + str(optionDict['max_steps']))
-        if (len(x_pl.get_shape()) < 3):
-            opts["input_dims"] = (None, x_pl.get_shape()[1].value)
-        else:
-            opts["input_dims"] = (None, x_pl.get_shape()[1].value, x_pl.get_shape()[2].value, x_pl.get_shape()[3].value)
+
+        if len(testX.shape) == 2:
+            xShape = (None, testX.shape[1])
+        elif (len(testX.shape) == 3):
+            xShape = (None, testX.shape[1], testX.shape[2])
+        elif (len(testX.shape) == 4):
+            xShape = (None, 1, testX.shape[2], testX.shape[3])
+        opts["input_dims"] = xShape
+
         if (gradient is not None):
             opts["output_dims"] = (None, 1)
         else:
@@ -338,7 +340,10 @@ def setupDataHandler(options, allowPredictiveTransformation=True, testPercentage
                               targetDataMode=options['target'])
     if (options['processedData']):
         fileList = dataHandler.findTwinFiles(dataFileName)
-        dataHandler.delegateDataDictsFromFile(fileList)
+        simplify = False
+        if (options['architecture'][0] == 'd' or 'l' in options['architecture'][0]):
+            simplify = True
+        dataHandler.delegateDataDictsFromFile(fileList, simplify)
 
     return dataHandler
 
@@ -550,7 +555,7 @@ def main(_):
 
     if optionDict['is_train']:
         dh = setupDataHandler(optionDict)
-        if optionDict['nn_model'] == 'cnn':
+        if optionDict['nn_model'] == 'cnn' or optionDict['nn_model'] == 'lstm':
             chained = loadChained(optionDict)
             if optionDict['retrain']:
                 gh = setupNetwork(options=optionDict, gradientFlag=True)
@@ -560,16 +565,13 @@ def main(_):
                     opt = getOptimizerOperation(gh.loss, learningRate, global_step)
                 gh.simpleRetrain(dh, learningRate, opt, optionDict, modelName)
             else:
-                dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, cnn = buildCnn(dh, swaptionGen=swo,
-                                                                                            chainedModel=chained)
+                dataHandler, loss, pred, x_pl, y_pl, testX, testY, pipeline, nn = buildNN(dh, swaptionGen=swo,
+                                                                                          chainedModel=chained)
                 outPipeline, inPipeline = getPipelines(optionDict)
-                cnn.inputPipeline = inPipeline
-                cnn.pipeline = outPipeline
-                trainNN(dataHandler, cnn, loss, pred, x_pl, y_pl, testX, testY,
-                        chainedModel=cnn.chainedModel)
-
-        elif optionDict['nn_model'] == 'lstm':
-            trainLSTM(dh)
+                nn.inputPipeline = inPipeline
+                nn.pipeline = outPipeline
+                trainNN(dataHandler, nn, loss, pred, x_pl, y_pl, testX, testY,
+                        chainedModel=nn.chainedModel)
         else:
             raise ValueError("--train_model argument can be lstm or cnn")
 
@@ -594,6 +596,8 @@ def main(_):
                 if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
                     pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                     gh.model.setInputPipelineList(pipelineList)
+
+                channelRange = None
                 if (len(optionDict['channel_range']) > 1):
                     channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
                 else:
@@ -657,7 +661,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--is_train', action='store_true', help='Train a model')
     parser.add_argument('--retrain', action='store_true', help='Train a model')
-    parser.add_argument('--dnn_hidden_units', type=str, default=DNN_HIDDEN_UNITS_DEFAULT,
+    parser.add_argument('-lunits', '--lstm_units', type=str, default=LSTM_UNITS_DEFAULT,
                         help='Comma separated list of number of units in each hidden layer')
     parser.add_argument('-bw', '--batch_width', type=int, default=BATCH_WIDTH_DEFAULT,
                         help='Batch width')
@@ -669,7 +673,7 @@ if __name__ == '__main__':
                         help='Comma separated list of number of convolution depth for volatilities in each layer')
     parser.add_argument('-did', '--data_ir_depth', type=int, default=CONVOLUTION_IR_DEPTH_DEFAULT,
                         help='Comma separated list of number of data depth for interest rate in each layer')
-    parser.add_argument('-fc', '--fullyConnectedNodes', nargs='+', default=FULLY_CONNECTED_NODES_DEFAULT,
+    parser.add_argument('-fc', '--nodes', nargs='+', default=NUMBER_OF_NODES,
                         help='Comma separated list of number of dense layer depth')
     parser.add_argument('-ar', '--architecture', nargs='+', default=DEFAULT_ARCHITECTURE,
                         help='Comma separated list of characters c->convLayer, l->lstm, f->flatten, d->dense')
@@ -764,7 +768,7 @@ if __name__ == '__main__':
     OPTIONS, unparsed = parser.parse_known_args()
     if (OPTIONS.load_multiple > 0):
         fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
-        m = str(model_dir).split("_cnn_")
+        m = str(model_dir).split("_" + str(OPTIONS.nn_model) + "_")
         m[0] = m[0][:len(m) - 5]
         optionList = []
         for i in range(OPTIONS.load_multiple - 1):

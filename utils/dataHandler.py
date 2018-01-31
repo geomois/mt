@@ -122,14 +122,16 @@ class DataHandler(object):
 
         return 0
 
-    def delegateDataDictsFromFile(self, fileList):
+    def delegateDataDictsFromFile(self, fileList, simplify=False):
         self.delegatedFromFile = True
         self.useDataPointers = False
         for i in range(len(fileList)):
             file = fileList[i]
             if ("test" in file):
+                dataType = 'test'
                 dataDict = self.testData
             else:
+                dataType = 'train'
                 dataDict = self.trainData
 
             mode = ""
@@ -137,11 +139,18 @@ class DataHandler(object):
                 mode = "input"
             elif ("output" in file):
                 mode = "output"
+                if (len(dataDict[mode]) > 0):
+                    # Skip importing output from file if the predictive shape is already used to delegate output
+                    continue
 
             try:
                 if (len(mode) > 0):
                     dataDict[mode] = np.load(file)
-                    dataDict[mode] = self._simplify(np.asarray(dataDict[mode]))
+                    if (simplify):
+                        if (self.predictive is not None):
+                            if (not self.transformed[dataType]):
+                                self._feedTransform(dataType)
+                        dataDict[mode] = self._simplify(np.asarray(dataDict[mode]))
                 else:
                     raise FileNotFoundError
             except:
@@ -195,12 +204,24 @@ class DataHandler(object):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
             if (inputPipeline is not None):
                 tt = self.trainData['input']
-                tt = tt.reshape((-1, tt.shape[2]))
-                inputPipeline = inputPipeline.fit(tt)
-                for i in range(np.asarray(self.trainData["input"]).shape[3]):
-                    # self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
-                    #     self.trainData["input"][:, 0, :, i])
-                    self.trainData["input"][:, 0, :, i] = inputPipeline.transform(self.trainData["input"][:, 0, :, i])
+                if (len(tt.shape) > 2):
+                    if (len(self.trainData['input'].shape) == 3):
+                        tt = tt.reshape((-1, tt.shape[1]))
+                        inputPipeline = inputPipeline.fit(tt)
+                        for i in range(np.asarray(self.trainData["input"]).shape[2]):
+                            # self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
+                            #     self.trainData["input"][:, 0, :, i])
+                            self.trainData["input"][:, :, i] = inputPipeline.transform(self.trainData["input"][:, :, i])
+                    elif (len(self.trainData['input'].shape) == 4):
+                        tt = tt.reshape((-1, tt.shape[2]))
+                        inputPipeline = inputPipeline.fit(tt)
+                        for i in range(np.asarray(self.trainData["input"]).shape[3]):
+                            # self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
+                            #     self.trainData["input"][:, 0, :, i])
+                            self.trainData["input"][:, 0, :, i] = inputPipeline.transform(
+                                self.trainData["input"][:, 0, :, i])
+                else:
+                    self.trainData["input"] = inputPipeline.fit_transform(self.trainData["input"])
         return inputPipeline, outPipeline
 
     def getNextBatch(self, batchSize=None, width=None, volDepth=None, irDepth=None, pipeline=None, randomDraw=False):
@@ -340,7 +361,6 @@ class DataHandler(object):
             inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
                     self.channelStart:self.channelEnd]  # skip last
             targetDict['input'] = self.reshapeMultiple(np.asarray(inPut), outDepth)
-
             self.transformed[data] = True
 
     def _reshapeToPredict(self, array, depth):  # CHECK
@@ -459,19 +479,23 @@ class DataHandler(object):
         return inPut
 
     def forceSimplify(self):
-        if (self.predictive is not None and not self.transformed['train']):
-            self._feedTransform('train')
+        if (self.predictive is not None):
+            if (not self.transformed['train']):
+                self._feedTransform('train')
             self.trainData['input'] = self._simplify(self.trainData['input'])
             self.trainData['output'] = self._simplify(self.trainData['output'])
-        if (self.predictive is not None and not self.transformed['test']):
-            self._feedTransform('test')
+            if (not self.transformed['test']):
+                self._feedTransform('test')
             self.testData['input'] = self._simplify(self.testData['input'])
             self.testData['output'] = self._simplify(self.testData['output'])
 
     def _simplify(self, x):
         if (len(x.shape) > 3):
-            if (x.shape[1] == 1 and x.shape[2] == 1):
-                x = x.reshape(x.shape[0], x.shape[3])
+            if (x.shape[1] == 1):
+                if (x.shape[2] == 1):
+                    x = x.reshape(x.shape[0], x.shape[3])
+                else:
+                    x = x.reshape(x.shape[0], x.shape[2], x.shape[3])
             if (x.shape[1] == 1 and x.shape[3] == 1):
                 x = x.reshape(x.shape[0], x.shape[2])
         return x

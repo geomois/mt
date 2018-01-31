@@ -20,30 +20,36 @@ def calcMean(forward, sigma, a, time):
     fw = []
     for t in time:
         fw.append(forward.zeroRate(t, ql.Continuous).rate())
-    mm = fw + (1/2.0) * np.power(sigma / a * (1.0 - np.exp(-a * t)), 2)
+    mm = fw + (1 / 2.0) * np.power(sigma / a * (1.0 - np.exp(-a * time)), 2)
     return mm
 
 
-def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=2000):
-    ddate = swo._dates[dataLength + 1]
-    refDate = ql.Date(ddate.day, ddate.month, ddate.year)
-    timestep = 30  # 360 / 12
-    length = 1/12 # in years
-    params, ir = runModel(swo, ddate, dataLength, 0, predictive_model)
-    alpha = params[0]
-    sigma = params[1]
-    levels = np.asarray(ir._levels)[0]
-    fw = ir.curveToArray(levels, ir[ddate])
-    forward_rate = ir.curveimpl(refDate, fw)
-    ql.Settings.instance().evaluationDate = refDate
-    spot_curve = ir[ddate]
-    spot_curve_handle = ql.YieldTermStructureHandle(spot_curve)
-    hw_process = ql.HullWhiteProcess(spot_curve_handle, alpha, sigma)
-    rng = ql.GaussianRandomSequenceGenerator(ql.UniformRandomSequenceGenerator(timestep, ql.UniformRandomGenerator()))
-    seq = ql.GaussianPathGenerator(hw_process, length, timestep, rng, False)
-    time, paths = generate_paths(simNumber, timestep, seq)
-    plotVariance(paths, timestep, time, alpha, sigma)
-    plotMean(paths, timestep, time, alpha, sigma, forward_rate)
+def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=1000):
+    dateList = [swo._dates[430]]  # [swo._dates[50], swo._dates[430], swo._dates[550], swo._dates[650]]
+    for l in dateList:
+        ddate = l
+        refDate = ql.Date(ddate.day, ddate.month, ddate.year)
+        timestep = 360 * 49  # 360 / 12
+        length = 49  # in years
+        params, ir = runModel(swo, ddate, dataLength, 0, predictive_model)
+        alpha = params[0]
+        sigma = params[1]
+        levels = np.asarray(ir._levels)[0]
+        fw = ir.curveToArray(levels, ir[ddate])
+        plt.plot(fw)
+        forward_rate = ir.curveimpl(refDate, fw)
+        ql.Settings.instance().evaluationDate = refDate
+        spot_curve = ir[ddate]
+        spot_curve_handle = ql.YieldTermStructureHandle(spot_curve)
+        hw_process = ql.HullWhiteProcess(spot_curve_handle, alpha, sigma)
+        rng = ql.GaussianRandomSequenceGenerator(
+            ql.UniformRandomSequenceGenerator(timestep, ql.UniformRandomGenerator()))
+        seq = ql.GaussianPathGenerator(hw_process, length, timestep, rng, False)
+        # pdb.set_trace()
+        time, paths = generate_paths(simNumber, timestep, seq)
+        plotSimulations(paths[:int(np.floor(len(paths) / 2))], timestep, time)
+        plotVariance(paths, timestep, time, alpha, sigma)
+        plotMean(paths, timestep, time, alpha, sigma, forward_rate)
 
 
 def runModel(swo, refDate, dataLength, skip, predictive_model):

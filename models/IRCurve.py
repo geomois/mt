@@ -65,7 +65,7 @@ class IRCurve(du.TimeSeriesData):
             ts = pd.Timestamp(ddate)
             refDate = ql.Date(ts.day, ts.month, ts.year)
             futureDate = refDate + ql.Period(futureIncrementInDays, ql.Days)
-            curve = getImpliedswo.Curve(futureDate, self.__getitem__(ddate))
+            curve = getImpliedForwardCurve(futureDate, self.__getitem__(ddate))
             fwRates = []
             for T in levels:
                 tenor = (T / 365.0) if (T / 365.0) <= curve.maxTime() else curve.maxTime()
