@@ -80,8 +80,8 @@ def getImpliedForwardCurve(futureDate, curve):
 
 
 def transformDerivatives(derivative, channelStart, channelEnd, xShape):
+    from scipy.integrate import simps
     derivative = np.asarray(derivative[0])
-    # pdb.set_trace()
     step = channelEnd - channelStart
     if (xShape[3] is not 1):
         derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
@@ -89,11 +89,21 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         derivative = derivative.reshape((-1, xShape[2]))
     datapoints = int(derivative.shape[0] / step)
     der = np.empty((step, datapoints))
+    dd = np.arange(1, derivative.shape[1] + 1) / 360
+    dd = dd.tolist()
+    dd.reverse()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
             # pdb.set_trace()
-            temp.append(np.sum(derivative[j]))
+            integral = simps(derivative[j])
+            # integral = simps(derivative[j],np.arange(1, derivative.shape[1] + 1))
+            # integral = 1 - np.exp(-simps(derivative[j]) / len(dd))
+            # weighted = integral * dd
+            # expInt = 1 - np.exp(-integral)
+            temp.append(integral)
+            # temp.append(np.sum(derivative[j]))
+
             # temp.append(np.average(derivative[j]))
             # temp.append(np.sum(np.abs(derivative[j])))
             # temp.append(np.average(np.abs(derivative[j])))

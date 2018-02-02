@@ -76,17 +76,20 @@ class NeuralNet(object):
                         # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     convcount += 1
-                elif ('l' in l.lower() or "lstm" in l.lower()):
+                elif ('l' in l.lower() or "lstm" in l.lower() or 'g' in l.lower() or "gru" in l.lower()):
                     with tf.variable_scope("recurrent" + str(lstmcount)):
                         ll = re.findall('(\d+)', l)
                         if (len(ll) > 0):
                             num_layers = int(ll[0])
                         else:
                             num_layers = 1
-                        layer = self._lstmLayer(layer, layer.get_shape()[-1].value, num_layers,
-                                                activationFunc=self._getFunction('act', 'l'),
-                                                regularizer=self._getFunction('reg', 'l'),
-                                                initializer=self._getFunction('init', 'l')())
+                        ttype = re.findall('l{1}|g{1}', l)[0]
+                        if (len(ttype) == 0):
+                            ttype = 'l'
+                        layer = self._recurrentLayer(layer, layer.get_shape()[-1].value, num_layers, ttype,
+                                                     activationFunc=self._getFunction('act', 'l'),
+                                                     regularizer=self._getFunction('reg', 'l'),
+                                                     initializer=self._getFunction('init', 'l')())
                 elif (l.lower() == 'f' or l.lower() == "flatten"):
                     with tf.variable_scope("flatten" + str(flatcount)):
                         # layer = tf.contrib.layers.flatten(layer)
@@ -161,22 +164,19 @@ class NeuralNet(object):
         self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
         return layer
 
-    def _lstmLayer(self, x, units, num_layers, activationFunc=None, regularizer=tf.contrib.layers.l2_regularizer,
-                   initializer=tf.contrib.layers.xavier_initializer()):
+    def _recurrentLayer(self, x, units, num_layers, ttype, activationFunc=None,
+                        regularizer=tf.contrib.layers.l2_regularizer,
+                        initializer=tf.contrib.layers.xavier_initializer()):
         # pdb.set_trace()
-        # if (num_layers == 1):
-        #     if (len(x.get_shape()) == 3):
-        #         x = tf.unstack(x, x.get_shape()[1], axis=1)
+        if (ttype == 'l'):
+            recurrentModule = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.LSTMCell(units) for _ in range(num_layers)])
+        else:
+            recurrentModule = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.GRUCell(units) for _ in range(num_layers)])
 
-        # lstmCell = tf.contrib.rnn.BasicLSTMCell(units)
-        # outputs, current_state = tf.contrib.rnn.static_rnn(lstmCell, x, dtype=tf.float32)
-
-        lstmModule = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.LSTMCell(units) for _ in range(num_layers)])
-        outputs, current_state = tf.nn.dynamic_rnn(lstmModule, x, dtype=tf.float32)
+        outputs, current_state = tf.nn.dynamic_rnn(recurrentModule, x, dtype=tf.float32)
         weights = tf.get_variable("w", [units, units], initializer=initializer)
         bias = tf.get_variable("b", [units], initializer=tf.constant_initializer(0.1))
         layer = tf.matmul(current_state[-1].h, weights) + bias
-        # layer = tf.matmul(outputs[-1], weights) + bias
         return layer
 
     def _getFunction(self, functionType, layerType='c'):
@@ -322,11 +322,6 @@ class NeuralNet(object):
             out = np.average(der, axis=0).reshape((-1, 1))
         else:
             out = np.average(der).reshape((-1, 1))
-        # print(der.shape)
-        # print(der[len(der) - 1, 0], np.average(der))
-        # out = [der[0, 0]]
-        # out = [der[len(der) - 1, 0]]
-
         # out = [0.025]
         # out = [0.001]
         return out
@@ -353,14 +348,20 @@ class NeuralNet(object):
                 x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
         if (len(self.inputPipelineList) > 0 or self.inputPipeline is not None):
             x = self.applyPipeLine('transform', x, 'input', useTf=False)
-        x = x.reshape((1, 1, x.shape[0], x.shape[1]))
+        if (len(x_pl.get_shape()) == 3):
+            x = x.reshape((1, x.shape[0], x.shape[1]))
+        elif (len(x_pl.get_shape()) == 4):
+            x = x.reshape((1, 1, x.shape[0], x.shape[1]))
         if (chainedOutput is not None):
             out = sess.run(self.outOp, feed_dict={x_pl: x, chained_pl: chainedOutput})
         else:
             out = sess.run(self.outOp, feed_dict={x_pl: x})
 
         if (self.derive):
-            # pdb.set_trace()
+            # patching for lstm
+            if (len(out[0].shape) == 3):
+                out[0] = out[0].reshape((1, 1, out[0].shape[1], out[0].shape[2]))
+                x = x.reshape((1, 1, x.shape[1], x.shape[2]))
             out = self.derivationProc(out, totalDepth, x.shape)
         else:
             if (len(self.pipelineList) > 0 or self.pipeline is not None):
@@ -375,5 +376,5 @@ class NeuralNet(object):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))
             out = out.tolist()
-
+        # pdb.set_trace()
         return out

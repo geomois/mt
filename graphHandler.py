@@ -6,10 +6,7 @@ import pdb, time
 
 class GraphHandler(object):
     def __init__(self, modelPath, modelType, sessConfig, chainedPrefix=""):
-        if (modelType.lower() == 'cnn'):
-            self.modelType = NeuralNet
-        else:
-            self.modelType = None
+        self.modelType = NeuralNet
         self.modelPath = modelPath
         self.model = None
         self.session = None
@@ -114,7 +111,7 @@ class GraphHandler(object):
                 ttS = time.time() if epoch % optionDict['print_frequency'] == 1 else ttS
                 batch_x, batch_y = dataHandler.getNextBatch(randomDraw=False)
                 _, out = sess.run([optOperation, self.loss], feed_dict={self.inputPlaceholder: batch_x,
-                                                                                self.outputPlaceholder: batch_y})
+                                                                        self.outputPlaceholder: batch_y})
                 if epoch % optionDict['print_frequency'] == 0:
                     elapsedTime = time.time() - ttS
                     lrPrint = learningRate if type(learningRate) is float else learningRate.eval()
@@ -131,7 +128,7 @@ class GraphHandler(object):
                             for i in range(np.asarray(testX).shape[3]):
                                 testX[:, 0, :, i] = inputPipeline.transform(testX[:, 0, :, i])
                     out = sess.run([self.loss], feed_dict={self.inputPlaceholder: testX,
-                                                                   self.outputPlaceholder: testY})
+                                                           self.outputPlaceholder: testY})
                     print("Test set:" "loss=", "{:.10f}".format(out))
                 if epoch % optionDict['checkpoint_freq'] == 0 and epoch > 0:
                     if (self.fileName is not None):
