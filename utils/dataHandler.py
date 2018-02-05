@@ -1,3 +1,4 @@
+
 import numpy as np
 import re
 import utils.dbDataPreprocess as dbc
@@ -142,7 +143,7 @@ class DataHandler(object):
                 if (len(dataDict[mode]) > 0):
                     # Skip importing output from file if the predictive shape is already used to delegate output
                     continue
-
+            pdb.set_trace()
             try:
                 if (len(mode) > 0):
                     dataDict[mode] = np.load(file)
