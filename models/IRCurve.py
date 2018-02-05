@@ -25,6 +25,7 @@ class IRCurve(du.TimeSeriesData):
         self.key_ts = parentNode + '/' + h5_irc_node + '/' + self.ccy + '/' + tenor.upper()
         self._daycounter = ql.Actual360()
         self.values = None
+        self.curveArray = None
         super(IRCurve, self).__init__(self.key_ts, file_name=du.h5file, data=data)
 
     def __getitem__(self, date):
@@ -149,14 +150,15 @@ class IRCurve(du.TimeSeriesData):
         pdb.set_trace()
         return levelParams[:, 0], levelParams[:, 1]
 
-    def calibrateStaticAlpha(self, start, end):
+    def calibrateStaticAlpha(self, start, end, diff=80):
         lr = LinearRegression()
-        curves = np.asarray(self.getAll())
-        irPre = curves[:, :curves.shape[1] - 1]
-        irAft = curves[:, 1:]
+        if (self.curveArray is None):
+            self.curveArray = np.asarray(self.getAll())
+        irPre = self.curveArray[:, :self.curveArray.shape[1] - 1]
+        irAft = self.curveArray[:, 1:]
         if end > irAft.shape[1]:
             end = irAft.shape[1]
-            start = irAft.shape[1] - 80
+            start = irAft.shape[1] - diff
         levelParams = []
         print("Fitting params")
         for i in range(irPre.shape[0]):
@@ -166,8 +168,9 @@ class IRCurve(du.TimeSeriesData):
         return levelParams
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
-    def calcThetaHW(self, path=None):
+    def calcThetaHW(self, path=None, skip=30):
         thetaFrame = pd.DataFrame(columns=["Date", "Term", "Value"])
+        deltaFrame = pd.DataFrame(columns=["Date", "Term", "Value"])
         deltaT = 1  # 0.00277778  # 1 Day
         levels = np.asarray(self._levels)[0]
         firstCurve = self.__getitem__(self._dates[0])
@@ -175,14 +178,17 @@ class IRCurve(du.TimeSeriesData):
         # for t in levels:
         # T.append((t / 365.0) if (t / 365.0) <= firstCurve.maxTime() else firstCurve.maxTime())
 
-        alpha0, sigma = self.calibrateStatic()
-        # pdb.set_trace()
-        alpha = 1 - alpha0
+        # alpha0, sigma = self.calibrateStatic()
+        # alpha = 1 - alpha0
+
         # alpha = -np.log(alpha0) / deltaT
         # sigma = np.power(sigma, 2) * (-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
-        for i in range(len(self._dates)):
-            ddate = self._dates[i]
+        for i, ddate in enumerate(self._dates):
+            if (i <= skip):
+                continue
+            alpha = self.calibrateStaticAlpha(i - skip, i, skip)
+            print(alpha)
             # fw = self.getHWForwardRate(ddate, T, deltaT)
             # fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
             # fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
@@ -196,17 +202,26 @@ class IRCurve(du.TimeSeriesData):
             # refDate = ql.Date(ts.day, ts.month, ts.year)
             # futureDate = refDate + ql.Period(180, ql.Days)
             fw = self.curveToArray(levels, self.__getitem__(ddate))
-            fwMinus = self.curveToArray(levels, self.__getitem__(ddate), delta=-deltaT)
+            # fwMinus = self.curveToArray(levels, self.__getitem__(ddate), delta=-deltaT)
             fwPlus = self.curveToArray(levels, self.__getitem__(ddate), delta=deltaT)
 
-            dtFw = (fwPlus - fwMinus) / (2 * (deltaT / 365))
+            # dtFw = (fwPlus - fwMinus) / (2 * (deltaT / 365))
+            dtFw = (fwPlus - fw) / (2 * (deltaT / 365))
             theta[i] = dtFw + alpha * fw
             refDate = pd.to_datetime(ddate)
             tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
+            try:
+                nextDate = self._dates[i + 1]
+                rT1 = self.__getitem__(nextDate)
+                deltaRate = [(refDate, T[j], (rT1.nodes()[j][1] - theta[i][j])) for j in range(len(T))]
+                deltaFrame = deltaFrame.append(pd.DataFrame(deltaRate, columns=deltaFrame.columns.tolist()))
+            except:
+                pass
             thetaFrame = thetaFrame.append(pd.DataFrame(tRate, columns=thetaFrame.columns.tolist()))
         # pdb.set_trace()
         if (path is not None):
             thetaFrame.to_csv(path, index=False)
+            deltaFrame.to_csv(path + "delta", index=False)
         return thetaFrame, theta
 
     def curveToArray(self, levels, curve, delta=0):
@@ -223,7 +238,7 @@ class IRCurve(du.TimeSeriesData):
                 start = (T - 365) / 365
 
             tenor = (T / 365.0) if (T / 365.0) <= curve.maxTime() else curve.maxTime()
-            deltaY = delta / 365
+            deltaY = delta / 365  # or 0.0001
             end = tenor + deltaY
             if (start >= end):
                 end = tenor

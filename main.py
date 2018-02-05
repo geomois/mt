@@ -552,7 +552,7 @@ def main(_):
                                  irFileName=optionDict['irFileName'])
             # dateInDays = optionDict['irType'] if optionDict['dayDict']
             # ir.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
-            ir.calcThetaHW(path=exportPath)
+            ir.calcThetaHW(path=exportPath, skip=optionDict['skip'])
         else:
             print("File already exists")
 
