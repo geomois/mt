@@ -11,7 +11,7 @@ class NeuralNet(object):
                  activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
                  regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, inPipeline=None,
-                 derive=False):
+                 inMultipleNetsIndex=None, derive=False):
 
         self.regularizationStrength = regularizationStrength
         self.units = deque([int(i) for i in units])
@@ -39,6 +39,7 @@ class NeuralNet(object):
         self.chainedModel = chainedModel
         self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
         self.derive = derive
+        self.inMultipleNetsIndex = inMultipleNetsIndex
 
     def inference(self, x, chainedValues=None):
         '''
@@ -254,6 +255,8 @@ class NeuralNet(object):
         return self.pipeline
 
     def getCurrentInputPipeline(self, index=None):
+        if (index == None and self.inMultipleNetsIndex is not None):
+            index = self.inMultipleNetsIndex
         if (len(self.inputPipelineList) > 1 and index is not None):
             self.inputPipeline = self.inputPipelineList[index]
         return self.inputPipeline

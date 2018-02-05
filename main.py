@@ -455,7 +455,7 @@ def getTfConfig():
     return config
 
 
-def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
+def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix="", inMultipleNetsIndex=None):
     """
     :param options:
     :param chainedDict
@@ -469,7 +469,8 @@ def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix=""):
     gh = GraphHandler(directory, options['nn_model'], sessConfig=getTfConfig(), chainedPrefix=prefix)
     outPipeline, inPipeline = getPipelines(options)
     gh.importSavedNN(fName, gradientFlag=gradientFlag)
-    gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline)
+    gh.buildModel(options, chained=chainedDict, outPipeline=outPipeline, inPipeline=inPipeline,
+                  inMultipleNetsIndex=None)
     return gh
 
 
@@ -517,7 +518,7 @@ def loadMultipleNetworks():
     pipelineList = None
     for j in range(len(optionList)):
         optionList[j]['conv_ir_depth'] = 1
-        temp = setupNetwork(options=optionList[j], gradientFlag=True)
+        temp = setupNetwork(options=optionList[j], gradientFlag=True, inMultipleNetsIndex=j)
         if (optionList[j]['use_input_pipeline'] and optionList[j]['input_pipeline'] is not None):
             pipelineList = cu.loadSavedScaler(optionList[1]['input_pipeline'])
             temp.model.setInputPipelineList(pipelineList)
@@ -591,6 +592,7 @@ def main(_):
     if optionDict['calculate_gradient']:
         if optionDict['calibrate_sigma']:
             swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            channelRange = -1
             if (optionList is not None):
                 gh = loadMultipleNetworks()
             else:
@@ -599,7 +601,6 @@ def main(_):
                     pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
                     gh.model.setInputPipelineList(pipelineList)
 
-                channelRange = None
                 if (len(optionDict['channel_range']) > 1):
                     channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
                 else:

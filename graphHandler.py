@@ -54,12 +54,13 @@ class GraphHandler(object):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
                 # self.gradientOp = tf.gradients(loss, [self.inputPlaceholder, self.outputPlaceholder])
 
-    def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None):
+    def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None, inMultipleNetsIndex=None):
         with self.graph.as_default():
             self.chainedDict = chained
             self.model = self.modelType(volChannels=optionDict['conv_vol_depth'],
                                         irChannels=optionDict['conv_ir_depth'],
-                                        pipeline=outPipeline, inPipeline=inPipeline)
+                                        pipeline=outPipeline, inPipeline=inPipeline,
+                                        inMultipleNetsIndex=inMultipleNetsIndex)
             self.loss = self.model.loss(self.predictOperation, self.outputPlaceholder)
             self._delegateModelParams()
 
