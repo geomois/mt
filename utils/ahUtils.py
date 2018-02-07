@@ -131,48 +131,6 @@ g2_local = {'name': 'G2++_local',
             'sampler': random_normal_draw}
 
 
-def local_hw_map(swo, date, pointA, pointB, off_x=0.1, off_y=0.1,
-                 low_x=1e-8, low_y=1e-8, nb_points=20):
-    assert (len(pointA) == 2 and len(pointB) == 2)
-    if pointA[0] > pointB[0]:
-        max_x = pointA[0]
-        min_x = pointB[0]
-    else:
-        min_x = pointA[0]
-        max_x = pointB[0]
-    if pointA[1] > pointB[1]:
-        max_y = pointA[1]
-        min_y = pointB[1]
-    else:
-        min_y = pointA[1]
-        max_y = pointB[1]
-    off_x = (max_x - min_x) * off_x
-    off_y = (max_y - min_y) * off_y
-    max_x += off_x
-    min_x -= off_x
-    max_y += off_y
-    min_y -= off_y
-    if min_x <= low_x:
-        min_x = low_x
-    if min_y <= low_y:
-        min_y = low_y
-
-    assert (min_x <= max_x and min_y <= max_y)
-    rx = np.linspace(min_x, max_x, nb_points)
-    ry = np.linspace(min_y, max_y, nb_points)
-    xx, yy = np.meshgrid(rx, ry)
-
-    result = np.empty(xx.shape)
-    result.fill(np.nan)
-    swo.set_date(date)
-    for i, x in enumerate(rx):
-        for j, y in enumerate(ry):
-            swo.model.setParams(ql.Array([x, y]))
-            result[i, j] = swo.model.value(swo.model.params(), swo.helpers)
-
-    return (xx, yy, result)
-
-
 def to_tenor(index, irType):
     frequency = index.tenor().frequency()
     if (irType.lower() == 'ois'):

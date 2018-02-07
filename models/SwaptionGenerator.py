@@ -1,4 +1,3 @@
-import utils.data_utils as du
 from models.IRCurve import IRCurve
 from utils import dbDataPreprocess as dbc
 from utils.customUtils import *
@@ -193,67 +192,6 @@ class SwaptionGen(du.TimeSeriesData):
         else:
             swo_error_history = None
         return (dates, swo_param_history, swo_error_history)
-
-    def train_history(self, *kwargs):
-        # Retrieves training data from history
-        if 'history_start' in kwargs:
-            history_start = kwargs['history_start']
-            history_end = kwargs['history_end']
-            history_part = None
-        else:
-            history_start = None
-            history_end = None
-            if 'history_part' in kwargs:
-                history_part = kwargs['history_part']
-            else:
-                history_part = 0.4
-
-        if 'save' in kwargs and kwargs['save']:
-            if 'file_name' in kwargs:
-                file_name = kwargs['file_name']
-            else:
-                file_name = sample_file_name(self, 0, True, history_start,
-                                             history_end, history_part)
-            print('Saving to file %s' % file_name)
-
-        (dates, y, swo_error) = \
-            self.__history(history_start, history_end, history_part, True)
-        x_ir = self._ircurve.to_matrix(dates)
-
-        # Calculate volatilities according to different conditions
-        nb_instruments = len(self.helpers)
-        nb_dates = len(dates)
-        x_swo = np.zeros((nb_dates, nb_instruments), np.float32)
-
-        for row in range(nb_dates):
-            # Set term structure
-            self.set_date(dates[row])
-            self.model.setParams(ql.Array(y[row, :].tolist()))
-            for swaption in range(nb_instruments):
-                try:
-                    NPV = self.helpers[swaption].modelValue()
-                    vola = self.helpers[swaption].impliedVolatility(NPV, 1.0e-6, 1000, 0.0001, 2.50)
-                    x_swo[row, swaption] = np.clip(vola - swo_error[row, swaption], 0., np.inf)
-                except RuntimeError as e:
-                    print('Exception (%s) for (sample, maturity, length): (%s, %s, %s)' % (
-                        e, row, self._maturities[swaption], self._lengths[swaption]))
-
-        if 'save' in kwargs and kwargs['save']:
-            if 'append' in kwargs and kwargs['append']:
-                try:
-                    x_swo_l = np.load(file_name + '_x_swo.npy')
-                    x_ir_l = np.load(file_name + '_x_ir.npy')
-                    y_l = np.load(file_name + '_y.npy')
-                    x_swo = np.concatenate((x_swo_l, x_swo), axis=0)
-                    x_ir = np.concatenate((x_ir_l, x_ir), axis=0)
-                    y = np.concatenate((y_l, y), axis=0)
-                except Exception as e:
-                    print(e)
-
-            np.save(file_name + '_x_swo', x_swo)
-            np.save(file_name + '_x_ir', x_ir)
-            np.save(file_name + '_y', y)
-        return (x_swo, x_ir, y)
 
     def calibrate_history(self, start=0, end=-1, fileName=du.h5file, csvFilePath=None):
         clean = True
@@ -472,99 +410,6 @@ class SwaptionGen(du.TimeSeriesData):
         self.model.setParams(ql.Array(params.tolist()[0]))
         _, errors = self.__errors()
         return (orig_errors, errors)
-
-    def history_heatmap(self, predictive_model, dates=None):
-        self.refdate = ql.Date(1, 1, 1901)
-        if dates is None:
-            dates = self._dates
-
-        errors_mat = np.zeros((len(dates), len(self.helpers)))
-        for i, ddate in enumerate(dates):
-            ddate = self._dates[i]
-            self.set_date(ddate)
-            params = predictive_model.predict((self.values, self._ircurve.values))
-            self.model.setParams(ql.Array(params.tolist()[0]))
-            _, errors_mat[i, :] = self.__errors()
-
-        return errors_mat
-
-    def objective_values(self, predictive_model, date_start, date_end):
-        dates = self._dates[date_start:date_end]
-        objective_predict = np.empty((len(dates),))
-        volas_predict = np.empty((len(dates),))
-        for i, ddate in enumerate(dates):
-            self.set_date(ddate)
-            params = predictive_model.predict((self.values, self._ircurve.values))
-            self.model.setParams(ql.Array(params.tolist()[0]))
-            volas_predict[i], _ = self.__errors()
-            try:
-                objective_predict[i] = self.model.value(self.model.params(), self.helpers)
-            except RuntimeError:
-                objective_predict[i] = np.nan
-
-        return (objective_predict, volas_predict)
-
-    def objective_shape(self, predictive_model, ddate, nb_samples_x=100, nb_samples_y=100):
-        store = pd.HDFStore(du.h5file)
-        df = store[self.key_model]
-        store.close()
-        self.set_date(ddate)
-
-        params_predict = predictive_model.predict((self.values, self._ircurve.values))
-        params_predict = params_predict.reshape((params_predict.shape[1],))
-        self.model.setParams(ql.Array(params_predict.tolist()))
-        print("Predict value = %f" % self.model.value(self.model.params(), self.helpers))
-        orig_objective = df.ix[ddate, 'orig_objective']
-        hist_objective = df.ix[ddate, 'HistObjective']
-        if orig_objective < hist_objective:
-            name = 'OrigParam'
-        else:
-            name = 'HistParam'
-
-        params_calib = np.array([df.ix[ddate, name + '0'],
-                                 df.ix[ddate, name + '1'],
-                                 df.ix[ddate, name + '2'],
-                                 df.ix[ddate, name + '3'],
-                                 df.ix[ddate, name + '4']])
-        self.model.setParams(ql.Array(params_calib.tolist()))
-        print("Calib value = %f" % self.model.value(self.model.params(), self.helpers))
-
-        params_optim = np.array(self._default_params)
-        self.model.setParams(self._default_params)
-        print("Optim value = %f" % self.model.value(self.model.params(), self.helpers))
-
-        # The intention is to sample the plane that joins the three points:
-        # params_predict, params_calib, and params_optim
-        # A point on that plane can be described by Q(alpha, beta)
-        # Q(alpha, beta) = params_predict+(alpha-beta(A*B)/(A*A))A+beta B
-        # with
-        A = params_calib - params_predict
-        # and
-        B = params_optim - params_predict
-
-        Aa = np.sqrt(np.dot(A, A))
-        Ba = np.dot(A, B) / Aa
-        lim_alpha = np.array([np.min((Ba, 0)), np.max((Ba / Aa, 1))])
-        da = lim_alpha[1] - lim_alpha[0]
-        lim_alpha += np.array([-1.0, 1.0]) * da / 10
-        lim_beta = np.array([-0.1, 1.1])
-
-        ls_alpha = np.linspace(lim_alpha[0], lim_alpha[1], nb_samples_x)
-        ls_beta = np.linspace(lim_beta[0], lim_beta[1], nb_samples_y)
-        xv, xy = np.meshgrid(ls_alpha, ls_beta)
-        sh = xv.shape
-        samples = [params_predict + (alpha - beta * Ba / Aa) * A + beta * B
-                   for alpha, beta in zip(xv.reshape((-1,)), xy.reshape((-1,)))]
-
-        objectives = np.empty((len(samples),))
-        for i, params in enumerate(samples):
-            try:
-                self.model.setParams(ql.Array(params.tolist()))
-                objectives[i] = self.model.value(self.model.params(), self.helpers)
-            except RuntimeError:
-                objectives[i] = np.nan
-
-        return (objectives.reshape(sh), lim_alpha, lim_beta)
 
     def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, part=None,
                         skip=0):

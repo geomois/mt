@@ -143,7 +143,6 @@ class DataHandler(object):
                 if (len(dataDict[mode]) > 0):
                     # Skip importing output from file if the predictive shape is already used to delegate output
                     continue
-            pdb.set_trace()
             try:
                 if (len(mode) > 0):
                     dataDict[mode] = np.load(file)
@@ -159,7 +158,7 @@ class DataHandler(object):
 
     def splitTestData(self, batchSize=None, width=None, volDepth=None, irDepth=None):
         batchSize, width, volDepth, irDepth = self._checkFuncInput(batchSize, width, volDepth, irDepth)
-        if (self.volatilities is None):  # generalize
+        if (self.volatilities is None or self.ir is None):
             self.readData(self.dataFileName)
         if (len(self.inputSegments) == 0 or self.segmentWidth != width):
             self._segmentDataset(width, volDepth, irDepth, self.useDataPointers)
@@ -204,16 +203,16 @@ class DataHandler(object):
             if (outPipeline is not None):
                 self.trainData["output"] = outPipeline.fit_transform(self.trainData["output"])
             if (inputPipeline is not None):
-                tt = self.trainData['input']
+                tt = np.asarray(self.trainData['input'])
                 if (len(tt.shape) > 2):
-                    if (len(self.trainData['input'].shape) == 3):
+                    if (len(np.asarray(self.trainData['input']).shape) == 3):
                         tt = tt.reshape((-1, tt.shape[1]))
                         inputPipeline = inputPipeline.fit(tt)
                         for i in range(np.asarray(self.trainData["input"]).shape[2]):
                             # self.trainData["input"][:, 0, :, i] = inputPipeline.fit_transform(
                             #     self.trainData["input"][:, 0, :, i])
                             self.trainData["input"][:, :, i] = inputPipeline.transform(self.trainData["input"][:, :, i])
-                    elif (len(self.trainData['input'].shape) == 4):
+                    elif (len(np.asarray(self.trainData['input']).shape) == 4):
                         tt = tt.reshape((-1, tt.shape[2]))
                         inputPipeline = inputPipeline.fit(tt)
                         for i in range(np.asarray(self.trainData["input"]).shape[3]):
@@ -444,6 +443,7 @@ class DataHandler(object):
 
     def _segmentDataset(self, width, volDepth, irDepth, pointers=True):
         inSegments = np.empty((0, width, volDepth + irDepth))
+        targetSegments = None
         if (self.target is not None):
             targetSegments = np.empty((0, self.target.shape[0]))
         while (True):
@@ -491,6 +491,7 @@ class DataHandler(object):
             self.testData['output'] = self._simplify(self.testData['output'])
 
     def _simplify(self, x):
+        x = np.asarray(x)
         if (len(x.shape) > 3):
             if (x.shape[1] == 1):
                 if (x.shape[2] == 1):
