@@ -545,14 +545,17 @@ def main(_):
         swo.calibrate_history(start=int(optionDict['historyStart']), end=int(optionDict['historyEnd']))
 
     if optionDict['exportForwardRates']:
-        exportPath = './exports/' + optionDict['suffix'] + 'fwCurves' + "_fDays" + str(
-            optionDict['futureIncrement']) + ".csv"
+        exportPath = './exports/' + optionDict['suffix'] + optionDict['forwardType'] + ".csv"
         if (not os.path.isfile(exportPath)):
             ir = irc.getIRCurves(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
                                  irFileName=optionDict['irFileName'])
             # dateInDays = optionDict['irType'] if optionDict['dayDict']
             # ir.calcForward(path=exportPath, futureIncrementInDays=optionDict['futureIncrement'])
-            ir.calcThetaHW(path=exportPath, skip=optionDict['skip'])
+            prime = False
+            if (optionDict['forwardType'].lower() in 'prime'):
+                prime = True
+
+            ir.calcThetaHW(path=exportPath, prime=prime, skip=optionDict['skip'])
         else:
             print("File already exists")
 
@@ -756,8 +759,8 @@ if __name__ == '__main__':
                         help='Calculate and save spot rates to forward rates')
     parser.add_argument('-cg', '--calculate_gradient', action='store_true',
                         help='Imports saved nn weights and calculates the gradient wrt the input')
-    parser.add_argument('-fd', '--futureIncrement', type=int, default=365,
-                        help='Future reference count of days after initial reference day')
+    parser.add_argument('-ft', '--forwardType', type=str, default='theta',
+                        help='Theta or prime calculation')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--transform', action='store_true', help="Transform data with pipeline")
     parser.add_argument('--in_transform', action='store_true', help="Transform input data with pipeline")

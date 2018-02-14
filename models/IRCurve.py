@@ -168,27 +168,31 @@ class IRCurve(du.TimeSeriesData):
         return levelParams
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
-    def calcThetaHW(self, path=None, skip=30):
+    def calcThetaHW(self, path=None, prime=False, skip=30):
         thetaFrame = pd.DataFrame(columns=["Date", "Term", "Value"])
         deltaFrame = pd.DataFrame(columns=["Date", "Term", "Value"])
-        deltaT = 1  # 0.00277778  # 1 Day
         levels = np.asarray(self._levels)[0]
         firstCurve = self.__getitem__(self._dates[0])
         T = levels
-        # for t in levels:
-        # T.append((t / 365.0) if (t / 365.0) <= firstCurve.maxTime() else firstCurve.maxTime())
-
         # alpha0, sigma = self.calibrateStatic()
         # alpha = 1 - alpha0
 
         # alpha = -np.log(alpha0) / deltaT
         # sigma = np.power(sigma, 2) * (-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
+        if (prime):
+            calcTheta = self._getPrime
+            calcAlpha = lambda x, y, z: None
+            skip = -1
+        else:
+            calcTheta = self._getTheta
+            calcAlpha = self.calibrateStaticAlpha
+
         for i, ddate in enumerate(self._dates):
             if (i <= skip):
                 continue
-            alpha = self.calibrateStaticAlpha(i - skip, i, skip)
-            print(alpha)
+            alpha = calcAlpha(i - skip, i, skip)
+            # print(alpha)
             # fw = self.getHWForwardRate(ddate, T, deltaT)
             # fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
             # fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
@@ -201,13 +205,8 @@ class IRCurve(du.TimeSeriesData):
             # ts = pd.Timestamp(ddate)
             # refDate = ql.Date(ts.day, ts.month, ts.year)
             # futureDate = refDate + ql.Period(180, ql.Days)
-            fw = self.curveToArray(levels, self.__getitem__(ddate))
-            # fwMinus = self.curveToArray(levels, self.__getitem__(ddate), delta=-deltaT)
-            fwPlus = self.curveToArray(levels, self.__getitem__(ddate), delta=deltaT)
-
-            # dtFw = (fwPlus - fwMinus) / (2 * (deltaT / 365))
-            dtFw = (fwPlus - fw) / (2 * (deltaT / 365))
-            theta[i] = dtFw + alpha * fw
+            curve = self.__getitem__(ddate)
+            theta[i] = calcTheta(levels, curve, alpha)
             refDate = pd.to_datetime(ddate)
             tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
             try:
@@ -224,7 +223,23 @@ class IRCurve(du.TimeSeriesData):
             deltaFrame.to_csv(path + "delta", index=False)
         return thetaFrame, theta
 
-    def curveToArray(self, levels, curve, delta=0):
+    def _getTheta(self, levels, curve, alpha=0.01):
+        deltaT = 1  # 0.00277778  # 1 Day
+        fw = self.curveToArray(levels, curve)
+        fwPlus = self.curveToArray(levels, curve, delta=deltaT)
+        dtFw = (fwPlus - fw) / (2 * (deltaT / 365))
+        theta = dtFw + alpha * fw
+        return theta
+
+    def _getPrime(self, levels, curve, alpha=None):
+        shift = 0.0027
+        fw = self.curveToArray(levels, curve)
+        fwPlus = self.curveToArray(levels, curve, instant=True, delta=shift)
+        prime = (fwPlus - fw) / shift
+        # pdb.set_trace()
+        return prime
+
+    def curveToArray(self, levels, curve, instant=False, delta=0):
         # Delta is expected to be in dayss
         # deltaY = delta / 365
         firstDate = curve.dates()[0]
@@ -242,7 +257,11 @@ class IRCurve(du.TimeSeriesData):
             end = tenor + deltaY
             if (start >= end):
                 end = tenor
-            fwRates.append(curve.forwardRate(start, end, ql.Continuous).rate())
+            if (instant):
+                fwRates.append(curve.forwardRate(tenor + delta, tenor + delta, ql.Continuous).rate())
+            else:
+                fwRates.append(curve.forwardRate(start, end, ql.Continuous).rate())
+
         return np.asarray(fwRates)
 
 
