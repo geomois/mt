@@ -160,11 +160,11 @@ class IRCurve(du.TimeSeriesData):
             end = irAft.shape[1]
             start = irAft.shape[1] - diff
         levelParams = []
-        print("Fitting params")
         for i in range(irPre.shape[0]):
             lr.fit(irPre[i, start:end].reshape(-1, 1), irAft[i, start:end].reshape(-1, 1))
             levelParams.append(lr.coef_[0, 0])
         levelParams = np.average(1 - np.asarray(levelParams))
+        print(str(end) + " Fit params: ", levelParams)
         return levelParams
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
@@ -174,11 +174,6 @@ class IRCurve(du.TimeSeriesData):
         levels = np.asarray(self._levels)[0]
         firstCurve = self.__getitem__(self._dates[0])
         T = levels
-        # alpha0, sigma = self.calibrateStatic()
-        # alpha = 1 - alpha0
-
-        # alpha = -np.log(alpha0) / deltaT
-        # sigma = np.power(sigma, 2) * (-2 * np.log(alpha0)) / deltaT * (1 - np.power(alpha, 2))
         theta = np.zeros((len(self._dates), len(levels)))
         if (prime):
             calcTheta = self._getPrime
@@ -192,19 +187,6 @@ class IRCurve(du.TimeSeriesData):
             if (i <= skip):
                 continue
             alpha = calcAlpha(i - skip, i, skip)
-            # print(alpha)
-            # fw = self.getHWForwardRate(ddate, T, deltaT)
-            # fwPlus = self.getHWForwardRate(ddate, T + deltaT, deltaT)
-            # fwMinus = self.getHWForwardRate(ddate, T - deltaT, deltaT)
-            # add1 = alpha * fw
-            # add2 = (sigma / (2 * alpha)) * (1 - np.exp(-alpha * deltaT))  # (T/365.0)
-            # dtFw = (fwPlus - fwMinus) / (2 * deltaT)
-            # pdb.set_trace()
-            # theta[i] = dtFw + add1 + add2
-
-            # ts = pd.Timestamp(ddate)
-            # refDate = ql.Date(ts.day, ts.month, ts.year)
-            # futureDate = refDate + ql.Period(180, ql.Days)
             curve = self.__getitem__(ddate)
             theta[i] = calcTheta(levels, curve, alpha)
             refDate = pd.to_datetime(ddate)
@@ -217,25 +199,26 @@ class IRCurve(du.TimeSeriesData):
             except:
                 pass
             thetaFrame = thetaFrame.append(pd.DataFrame(tRate, columns=thetaFrame.columns.tolist()))
-        # pdb.set_trace()
         if (path is not None):
             thetaFrame.to_csv(path, index=False)
             deltaFrame.to_csv(path + "delta", index=False)
         return thetaFrame, theta
 
     def _getTheta(self, levels, curve, alpha=0.01):
-        deltaT = 1  # 0.00277778  # 1 Day
+        # deltaT = 1  # 0.00277778  # 1 Day
+        # fw = self.curveToArray(levels, curve)
+        # fwPlus = self.curveToArray(levels, curve, delta=deltaT)
+        # dtFw = (fwPlus - fw) / (deltaT / 365)
         fw = self.curveToArray(levels, curve)
-        fwPlus = self.curveToArray(levels, curve, delta=deltaT)
-        dtFw = (fwPlus - fw) / (2 * (deltaT / 365))
+        dtFw = self._getPrime(levels, curve)
         theta = dtFw + alpha * fw
         return theta
 
     def _getPrime(self, levels, curve, alpha=None):
-        shift = 0.0027
-        fw = self.curveToArray(levels, curve)
+        shift = 0.0001
+        fwMinus = self.curveToArray(levels, curve, instant=True, delta=(-1 * shift))
         fwPlus = self.curveToArray(levels, curve, instant=True, delta=shift)
-        prime = (fwPlus - fw) / shift
+        prime = (fwPlus - fwMinus) / (2 * shift)
         # pdb.set_trace()
         return prime
 
@@ -247,13 +230,17 @@ class IRCurve(du.TimeSeriesData):
         for T in levels.tolist():
             if (T <= 365):
                 start = 0
-                if (firstDate + ql.Period(T + int(np.round(delta, decimals=0)), ql.Days) < firstDate):
+                if (firstDate + ql.Period(T + int(np.round(delta, decimals=0)), ql.Days) < firstDate or T + delta < 0):
                     delta = 0
             else:
                 start = (T - 365) / 365
 
             tenor = (T / 365.0) if (T / 365.0) <= curve.maxTime() else curve.maxTime()
-            deltaY = delta / 365  # or 0.0001
+
+            if delta >= 1:
+                deltaY = delta / 365  # or 0.0001
+            else:
+                deltaY = delta
             end = tenor + deltaY
             if (start >= end):
                 end = tenor
