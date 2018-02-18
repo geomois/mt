@@ -1,4 +1,3 @@
-
 import numpy as np
 import re
 import utils.dbDataPreprocess as dbc
@@ -14,7 +13,8 @@ class DataHandler(object):
     def __init__(self, dataFileName='data/toyData/AH_vol.npy'
                  , testDataPercentage=DEFAULT_TEST_DATA_PERCENTAGE, batchSize=50, width=50, volDepth=156,
                  irDepth=44, sliding=True, useDataPointers=False, randomSplit=False, datePointer=False, save=False,
-                 specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None):
+                 specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None, cropFirst=0,
+                 alignedData=False):
         target = 'params' if targetDataMode is None else targetDataMode
         if (targetDataPath is not None and targetDataMode is None):
             target = 'target'
@@ -59,6 +59,8 @@ class DataHandler(object):
         self.predictive = predictiveShape
         self.targetDataPath = targetDataPath
         self.transformed = {"test": False, "train": False}
+        self.cropFirst = cropFirst
+        self.alignedData = alignedData
         self._getCurrentRunId()
 
     def setupModes(self, volDepth, irDepth, targetName):
@@ -408,6 +410,8 @@ class DataHandler(object):
         return params
 
     def _setDataFiles(self, data, mode):
+        if (self.targetName.lower() == "deltair" and mode.lower() != self.targetName.lower()):
+            data = data[:, self.cropFirst:]
         if (mode.lower() == 'vol'):
             self.volatilities = data
         elif (mode.lower() == 'ir'):
@@ -568,11 +572,15 @@ class DataHandler(object):
                 irData = (irStartPosition, irStopPosition, startWidthPosition, endWidthPosition)
             else:
                 irData = self.ir[irStartPosition:irStopPosition, startWidthPosition:endWidthPosition]
+
         if (self.target is not None):
-            if (self.targetName.lower() == 'deltair'):
-                targetPos = endWidthPosition
+            if (self.alignedData):
+                targetPos = startWidthPosition
             else:
-                targetPos = endWidthPosition - 1
+                if (self.targetName.lower() == 'deltair'):
+                    targetPos = endWidthPosition
+                else:
+                    targetPos = endWidthPosition - 1
 
             if (pointers):
                 target = targetPos

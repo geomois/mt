@@ -202,6 +202,7 @@ class IRCurve(du.TimeSeriesData):
         if (path is not None):
             thetaFrame.to_csv(path, index=False)
             deltaFrame.to_csv(path + "delta", index=False)
+        pdb.set_trace()
         return thetaFrame, theta
 
     def _getTheta(self, levels, curve, alpha=0.01):

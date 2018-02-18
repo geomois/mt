@@ -171,7 +171,7 @@ def load_obj(name):
 
 def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_vol.csv', targetDataPath=None,
                     targetDataMode=None, specialFilePrefix=None, predictiveShape=None, volDepth=156, irDepth=44,
-                    width=30):
+                    width=30, cropFirst=0, alignedData=False):
     import utils.dataHandler as dh
     # argetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
     # targetDataMode = 'deltair'
@@ -179,9 +179,13 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     # example:
     # import utils.customUtils as cu
     # cu.prepareProcData(scaleParams=False, dataFileName='data/ownData/AH_eonia2005_ir.csv',targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair',specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
+    # cu.prepareProcData(scaleParams=True, dataFileName='data/ownData/AH_eonia2005_ir.csv',
+    #                    targetDataPath='exports/EONIA_delta_per100alpha.csv', targetDataMode='deltair',
+    #                    specialFilePrefix='_perTermStdPer100Delta_', volDepth=0, irDepth=22, width=30, cropFirst=70,
+                       # alignedData=True)
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
                         useDataPointers=False, save=True, predictiveShape=predictiveShape,
-                        specialFilePrefix=specialFilePrefix,
+                        specialFilePrefix=specialFilePrefix, cropFirst=cropFirst, alignedData=alignedData,
                         targetDataPath=targetDataPath, targetDataMode=targetDataMode)
     if (scaleParams):
         dd.readData(dd.dataFileName)
