@@ -63,17 +63,21 @@ class NeuralNet(object):
 
         with tf.variable_scope(scope):
             for i, l in enumerate(self.architecture):
-                if (l.lower() == 'c' or l.lower() == "conv"):
+                if (l.lower() == 'c' or l.lower() == 's' or l.lower() == "conv"):
+                    if (l.lower() == 's'):
+                        separable = True
+                    else:
+                        separable = False
                     with tf.variable_scope('convLayer' + str(convcount)):
                         kernelSize = self.kernels.popleft()
                         depthSize = self.depths.popleft()
                         # if (layer is not None):
                         #     nbChannels = layer.get_shape().as_list()[3]
                         layer = self._depthWiseConvLayer(layer, kernelSize, nbChannels=nbChannels,
-                                                         depth=depthSize,
+                                                         depth=depthSize, sep=separable,
                                                          activationFunc=self._getFunction('act', 'c'),
                                                          initializer=self._getFunction('init', 'c')())
-                        maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
+                        # maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
                         # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     convcount += 1
@@ -127,7 +131,7 @@ class NeuralNet(object):
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
         return layer
 
-    def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, activationFunc=tf.nn.relu,
+    def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, sep=False, activationFunc=tf.nn.relu,
                             initializer=tf.contrib.layers.xavier_initializer()):
         '''
         x : input
@@ -137,10 +141,17 @@ class NeuralNet(object):
         activationFunc : activation
         initializer : weight initializer function
         '''
-        # kernel [filter_height, filter_width, in_channels, channel_multiplier]
-        kernel = tf.get_variable("w", [1, kernelSize, nbChannels, depth], initializer=initializer)
-        bias = tf.get_variable("b", depth * nbChannels, initializer=tf.constant_initializer(0))
-        layer = tf.nn.depthwise_conv2d(x, kernel, strides=[1, 1, 1, 1], padding='SAME')  # NHWC
+        if (sep):
+            kernel = tf.get_variable("w", [1, kernelSize, nbChannels, depth], initializer=initializer)
+            bias = tf.get_variable("b", kernelSize, initializer=tf.constant_initializer(0))
+            pointKernel = tf.get_variable("pw", [1, 1, nbChannels * depth, kernelSize], initializer=initializer)
+            layer = tf.nn.separable_conv2d(x, kernel, pointKernel, strides=[1, 1, 1, 1], padding='SAME')  # NHWC
+        else:
+            # kernel [filter_height, filter_width, in_channels, channel_multiplier]
+            kernel = tf.get_variable("w", [1, kernelSize, nbChannels, depth], initializer=initializer)
+            bias = tf.get_variable("b", depth * nbChannels, initializer=tf.constant_initializer(0))
+            layer = tf.nn.depthwise_conv2d(x, kernel, strides=[1, 1, 1, 1], padding='SAME')  # NHWC
+
         pre_activation = tf.nn.bias_add(layer, bias)
         layer = activationFunc(pre_activation, name='activation')
 
