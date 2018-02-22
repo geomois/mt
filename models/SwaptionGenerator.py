@@ -433,7 +433,8 @@ class SwaptionGen(du.TimeSeriesData):
         # constraint = ql.NonhomogeneousBoundaryConstraint(lower, upper)
         constraint = ql.PositiveConstraint()
         self.set_date(dates[0])
-        dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
+        dataDict = {'vol': np.zeros((dataLength, self.values.shape[0])),
+                    'ir': np.zeros((dataLength, self._ircurve.values.shape[0]))}
         for i, ddate in enumerate(dates):
             if (skip == -1):
                 if (i % 80 == 0):
@@ -441,20 +442,26 @@ class SwaptionGen(du.TimeSeriesData):
             if (i < skip):
                 if (i + dataLength - 1 >= skip):
                     self.set_date(ddate)
-                    dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                    dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                    dataDict['vol'][i] = self.values
+                    dataDict['ir'][i] = self._ircurve.values
+                    # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                    # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 continue
             if (i + 1 < dataLength):
                 self.set_date(ddate)
-                dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                dataDict['vol'][i] = self.values
+                dataDict['ir'][i] = self._ircurve.values
+                # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 continue
             self.set_date(ddate)
             if (dataLength == 1):
                 params = predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir'])
             else:
-                dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
+                dataDict['vol'][-1] = self.values
+                dataDict['ir'][-1] = self._ircurve.values
+                # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
+                # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 if (type(predictive_model) == list):
                     out = []
                     for j in range(len(predictive_model)):
@@ -463,11 +470,16 @@ class SwaptionGen(du.TimeSeriesData):
                 else:
                     params = np.abs(predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir']))
 
-                dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
-                dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
+                dataDict['vol'][:-1] = dataDict['vol'][1:]
+                dataDict['ir'][:-1] = dataDict['ir'][1:]
+                # dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
+                # dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
             # self.setupModel(alpha=params[0])
             params = [[params[0, 0], 0]]  # shape (1,2)
+            print(params)
+            outcome.append(params)
+            continue
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)
@@ -494,6 +506,7 @@ class SwaptionGen(du.TimeSeriesData):
 
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
+        pdb.set_trace()
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,

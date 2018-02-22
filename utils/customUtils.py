@@ -8,6 +8,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import re, pickle, os, pdb
 from utils.FunctionTransformer import FunctionTransformerWithInverse
+from scipy.integrate import simps
 
 optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency", "gpu_memory_fraction", "suffix",
               "decay_steps", "weight_reg_strength", "irFileName", "model_dir", "historyStart", "test_frequency",
@@ -79,8 +80,7 @@ def getImpliedForwardCurve(futureDate, curve):
     return impliedCurve
 
 
-def transformDerivatives(derivative, channelStart, channelEnd, xShape):
-    from scipy.integrate import simps
+def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001):
     derivative = np.asarray(derivative[0])
     step = channelEnd - channelStart
     if (xShape[3] is not 1):
@@ -89,15 +89,31 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         derivative = derivative.reshape((-1, xShape[2]))
     datapoints = int(derivative.shape[0] / step)
     der = np.empty((step, datapoints))
-    dd = np.arange(1, derivative.shape[1] + 1) / 360
-    dd = dd.tolist()
+    depth = derivative.shape[1]
+    dd = (1 / np.linspace(1, derivative.shape[1], num=derivative.shape[1])).tolist()
+    dt = (- (1 - np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1]))).tolist()
+    lin = (np.linspace(1, derivative.shape[1], num=derivative.shape[1])).tolist()
+    # dd = np.arange(1, derivative.shape[1] + 1) / 360
+    # dd = dd.tolist()
     dd.reverse()
+    dt.reverse()
+    lin.reverse()
+    dt = np.asarray(dt)
+    lin = np.asarray(lin)
+    pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            # pdb.set_trace()
-            integral = simps(derivative[j])
-            # integral = simps(derivative[j],np.arange(1, derivative.shape[1] + 1))
+            # integral = simps(derivative[j], dd)
+            # integral = simps(np.log((derivative[j] - 1) / (dt - 1)), dd)
+            # integral = simps((derivative[j] - 1) / dt, dd)
+            # integral = simps(-(derivative[j] - 1) / lin, dd) / 30
+            # integral = simps((derivative[j] - 1) / dt, lin)
+            integral = simps(np.log((derivative[j] - 1) / dt), dd)
+            # integral = (derivative[j] - 1) / dt
+
+            # integral = simps( (np.log((derivative - ((dt+2*Dt)/Dt))/(1-((2*Dt)/Dt))))/dt, dd) #minus is not needed as we have t=0 so dt is in reality negative
+
             # integral = 1 - np.exp(-simps(derivative[j]) / len(dd))
             # weighted = integral * dd
             # expInt = 1 - np.exp(-integral)
@@ -110,6 +126,8 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         # der = np.vstack((der, temp))
         # der[i] = np.abs(temp)
         der[i] = temp
+    # der[der < 0] = np.average(der[der > 0])
+    # pdb.set_trace()
     return der
 
 
@@ -182,7 +200,7 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     # cu.prepareProcData(scaleParams=True, dataFileName='data/ownData/AH_eonia2005_ir.csv',
     #                    targetDataPath='exports/EONIA_delta_per100alpha.csv', targetDataMode='deltair',
     #                    specialFilePrefix='_perTermStdPer100Delta_', volDepth=0, irDepth=22, width=30, cropFirst=70,
-                       # alignedData=True)
+    # alignedData=True)
     dd = dh.DataHandler(dataFileName=dataFileName, volDepth=volDepth, irDepth=irDepth, width=width,
                         useDataPointers=False, save=True, predictiveShape=predictiveShape,
                         specialFilePrefix=specialFilePrefix, cropFirst=cropFirst, alignedData=alignedData,

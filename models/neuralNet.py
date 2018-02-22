@@ -303,6 +303,7 @@ class NeuralNet(object):
         return inPut
 
     def applyPipeLine(self, tType, x, mode, useTf=False):
+        # pdb.set_trace()
         if (mode == 'input'):
             modeFunc = self.getCurrentInputPipeline
         else:
@@ -329,9 +330,13 @@ class NeuralNet(object):
                     x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x.T)
         return x
 
-    @staticmethod
-    def derivationProc(out, totalDepth, xShape):
+    # @staticmethod
+    def derivationProc(self, out, totalDepth, xShape):
         der = cu.transformDerivatives(out, 0, totalDepth, xShape)
+        pdb.set_trace()
+        der = self.applyPipeLine(tType='inverse', x=der.T, mode='input').T
+        # der = self.inputPipeline.inverse_transform(der) / 30
+
         if (der.shape[1] > 1):
             out = np.average(der, axis=0).reshape((-1, 1))
         else:
