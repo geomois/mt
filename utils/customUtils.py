@@ -88,10 +88,14 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
     else:
         derivative = derivative.reshape((-1, xShape[2]))
     datapoints = int(derivative.shape[0] / step)
-    der = np.empty((step, datapoints))
+    der = np.zeros((step, datapoints))
+
+    derWA = np.zeros((step, datapoints))
+    derNorm = np.zeros((step, datapoints))
+
     depth = derivative.shape[1]
     dd = (1 / np.linspace(1, derivative.shape[1], num=derivative.shape[1])).tolist()
-    dt = (- (1 - np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1]))).tolist()
+    dt = (np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])).tolist()
     lin = (np.linspace(1, derivative.shape[1], num=derivative.shape[1])).tolist()
     # dd = np.arange(1, derivative.shape[1] + 1) / 360
     # dd = dd.tolist()
@@ -100,17 +104,35 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
     lin.reverse()
     dt = np.asarray(dt)
     lin = np.asarray(lin)
-    pdb.set_trace()
+    weights = np.logspace(1 / 30, 1, num=30) / 10
+    # pdb.set_trace()
     for i in range(step):
         temp = []
+        tWA = []
+        tNorm = []
+        # pdb.set_trace()
         for j in range(i, derivative.shape[0], step):
             # integral = simps(derivative[j], dd)
             # integral = simps(np.log((derivative[j] - 1) / (dt - 1)), dd)
             # integral = simps((derivative[j] - 1) / dt, dd)
             # integral = simps(-(derivative[j] - 1) / lin, dd) / 30
             # integral = simps((derivative[j] - 1) / dt, lin)
-            integral = simps(np.log((derivative[j] - 1) / dt), dd)
+            integral = simps(np.log((1 - derivative[j]) / (1 - dt)), dd)
+            # wA=  np.linalg.norm(np.log((1 - derivative[j]) / -(dt-1))/ (1+dt))/30
+            wA = np.average(np.log((1 - derivative[0]) / -(dt - 1)) / (dt))/30
+            # integral= wA
             # integral = (derivative[j] - 1) / dt
+            # tt = simps(np.log((derivative[j] - 1) / dt))
+
+            # wA = np.average((1 - derivative[j]) * (1+dt) * weights)
+
+            # wA = simps((1 - derivative[j]) / (dt), dd)
+            tWA.append(wA)
+
+            # norm = np.linalg.norm((1 - derivative[j]) * (1 + dt)) / depth
+
+            # norm = np.average(np.log((1 - derivative[j]) / dt) * weights)
+            # tNorm.append(norm)
 
             # integral = simps( (np.log((derivative - ((dt+2*Dt)/Dt))/(1-((2*Dt)/Dt))))/dt, dd) #minus is not needed as we have t=0 so dt is in reality negative
 
@@ -126,9 +148,12 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
         # der = np.vstack((der, temp))
         # der[i] = np.abs(temp)
         der[i] = temp
+        derWA[i] = wA
+        # derNorm[i] = norm
     # der[der < 0] = np.average(der[der > 0])
+    print("wA: " + str(np.average(derWA)) + " norm: " + str(np.average(derNorm)))
     # pdb.set_trace()
-    return der
+    return der, derWA
 
 
 def reshapeMultiple(array, depth, start, end):

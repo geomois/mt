@@ -770,10 +770,9 @@ if __name__ == '__main__':
                         help='Calculate and save spot rates to forward rates')
     parser.add_argument('-cg', '--calculate_gradient', action='store_true',
                         help='Imports saved nn weights and calculates the gradient wrt the input')
-    parser.add_argument('-ft', '--forwardType', type=str, default='theta',
-                        help='Theta or prime calculation')
+    parser.add_argument('-ft', '--forwardType', type=str, default='theta', help='Theta or prime calculation')
+    parser.add_argument('-pts', '--perTermScale', action='store_true', help='Scale input per term')
     parser.add_argument('-eif', '--exportInstFw', action='store_true', help='Export instantaneous forward rates')
-    parser.add_argument('-pts', '--perTermScale', action='store_true', help='Export instantaneous forward rates')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--transform', action='store_true', help="Transform data with pipeline")
     parser.add_argument('--in_transform', action='store_true', help="Transform input data with pipeline")
@@ -817,6 +816,8 @@ if __name__ == '__main__':
             optionDict['currency'] = OPTIONS.currency
             optionDict['irType'] = OPTIONS.irType
             optionDict['simulate'] = OPTIONS.simulate
+            optionDict['exportInstFw'] = False
+
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))
     else:
