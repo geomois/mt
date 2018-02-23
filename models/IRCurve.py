@@ -191,19 +191,53 @@ class IRCurve(du.TimeSeriesData):
             theta[i] = calcTheta(levels, curve, alpha)
             refDate = pd.to_datetime(ddate)
             tRate = [(refDate, T[j], theta[i][j]) for j in range(len(T))]
+
             try:
                 nextDate = self._dates[i + 1]
-                rT1 = self.__getitem__(nextDate)
-                deltaRate = [(refDate, T[j], (rT1.nodes()[j][1] - theta[i][j])) for j in range(len(T))]
-                deltaFrame = deltaFrame.append(pd.DataFrame(deltaRate, columns=deltaFrame.columns.tolist()))
+                nextFrame = self._getSubOfNext(levels, ddate, nextDate, theta[i], deltaFrame.columns.tolist())
+                deltaFrame = deltaFrame.append(nextFrame)
             except:
                 pass
             thetaFrame = thetaFrame.append(pd.DataFrame(tRate, columns=thetaFrame.columns.tolist()))
         if (path is not None):
             thetaFrame.to_csv(path, index=False)
             deltaFrame.to_csv(path + "delta", index=False)
-        pdb.set_trace()
+
         return thetaFrame, theta
+
+    def getInstForward(self, path=None, skip=0):
+        currentInstFw = pd.DataFrame(columns=["Date", "Term", "Value"])
+        levels = np.asarray(self._levels)[0]
+        instForward = np.zeros((len(self._dates), len(levels)))
+        for i, ddate in enumerate(self._dates):
+            if (i <= skip):
+                continue
+            try:
+                curve = self.__getitem__(ddate)
+                fwT = self.curveToArray(levels, curve, instant=True)
+                nextFrame = self._getSubOfNext(levels, ddate, ddate, fwT, currentInstFw.columns.tolist())
+                currentInstFw = currentInstFw.append(nextFrame)
+            except:
+                pass
+            # try:
+            #     nextDate = self._dates[i + 1]
+            #     nextCurve = self.__getitem__(nextDate)
+            #     fwDt = self.curveToArray(levels, nextCurve, instant=True)
+            #     nextFrame = self._getSubOfNext(levels, nextDate, nextDate, fwDt, nextInstFw.columns.tolist())
+            #     nextInstFw = nextInstFw.append(nextFrame)
+            # except:
+            #     pass
+        if (path is not None):
+            currentInstFw.to_csv(path, index=False)
+
+        return currentInstFw
+
+    def _getSubOfNext(self, levels, currentDate, nextDate, rateList, columns):
+        rT1 = self.__getitem__(nextDate)
+        refDate = pd.to_datetime(currentDate)
+        deltaRate = [(refDate, levels[j], (rT1.nodes()[j][1] - rateList[j])) for j in range(len(levels))]
+        deltaFrame = pd.DataFrame(deltaRate, columns=columns)
+        return deltaFrame
 
     def _getTheta(self, levels, curve, alpha=0.01):
         # deltaT = 1  # 0.00277778  # 1 Day

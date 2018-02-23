@@ -226,3 +226,17 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     suffix = 'train' + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(dd.segmentWidth) + '_' + str(
         dd.volDepth) + '_' + str(dd.irDepth)
     dd._saveProcessedData(suffix, 'train')
+
+
+def rScale(array, dataHandler):
+    dd = dataHandler
+    sc = StandardScaler()
+    temp = np.empty((0, array.shape[1]))
+    for i in range(array.shape[0]):
+        scaled = sc.fit_transform(array[i, :].reshape((-1, 1)))
+        suffix = 'exports/perTermScaler' + str(i) + str(dd.specialPrefix) + str(dd.batchSize) + "_w" + str(
+            dd.segmentWidth) + '_' + str(dd.volDepth) + '_' + str(dd.irDepth)
+        joblib.dump(sc, suffix + ".pkl", compress=1)
+        temp = np.vstack((temp, scaled[:, 0]))
+    array = temp
+    return array

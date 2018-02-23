@@ -166,8 +166,9 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
 
         learningRate = getLearningrate(optionDict['decay_rate'], global_step)
         opt = getOptimizerOperation(loss, learningRate, global_step)
-        inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
-                                                                     outPipeline=network.pipeline)
+        if (not optionDict['perTermScale']):
+            inputPipeline, outPipeline = dataHandler.initializePipelines(inputPipeline=network.inputPipeline,
+                                                                         outPipeline=network.pipeline)
 
         gradient = None
         if (optionDict['with_gradient']):
@@ -338,7 +339,7 @@ def setupDataHandler(options, allowPredictiveTransformation=True, testPercentage
                               volDepth=int(options['data_vol_depth']), irDepth=int(options['data_ir_depth']),
                               useDataPointers=False, save=options['saveProcessedData'],
                               specialFilePrefix=specialFilePrefix, predictiveShape=predictiveShape,
-                              targetDataMode=options['target'])
+                              targetDataMode=options['target'], perTermScale=options['perTermScale'])
     if (options['processedData']):
         fileList = dataHandler.findTwinFiles(dataFileName)
         simplify = False
@@ -559,6 +560,16 @@ def main(_):
         else:
             print("File already exists")
 
+    if optionDict['exportInstFw']:
+        exportPath = './exports/' + optionDict['suffix'] + "instaFw.csv"
+        if (not os.path.isfile(exportPath)):
+            ir = irc.getIRCurves(getIrModel(), currency=optionDict['currency'], irType=optionDict['irType'],
+                                 irFileName=optionDict['irFileName'])
+
+            ir.getInstForward(path=exportPath, skip=optionDict['skip'])
+        else:
+            print("File already exists")
+
     if optionDict['is_train']:
         dh = setupDataHandler(optionDict)
         if optionDict['nn_model'] == 'cnn' or optionDict['nn_model'] == 'lstm':
@@ -761,6 +772,8 @@ if __name__ == '__main__':
                         help='Imports saved nn weights and calculates the gradient wrt the input')
     parser.add_argument('-ft', '--forwardType', type=str, default='theta',
                         help='Theta or prime calculation')
+    parser.add_argument('-eif', '--exportInstFw', action='store_true', help='Export instantaneous forward rates')
+    parser.add_argument('-pts', '--perTermScale', action='store_true', help='Export instantaneous forward rates')
     parser.add_argument('--use_cpu', action='store_true', help='Use cpu instead of gpu')
     parser.add_argument('--transform', action='store_true', help="Transform data with pipeline")
     parser.add_argument('--in_transform', action='store_true', help="Transform input data with pipeline")

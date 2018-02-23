@@ -4,6 +4,7 @@ import utils.dbDataPreprocess as dbc
 import models.SwaptionGenerator as inst
 import os.path
 import pdb
+import utils.customUtils as cu
 import datetime as dt
 
 DEFAULT_TEST_DATA_PERCENTAGE = 0.2
@@ -14,7 +15,7 @@ class DataHandler(object):
                  , testDataPercentage=DEFAULT_TEST_DATA_PERCENTAGE, batchSize=50, width=50, volDepth=156,
                  irDepth=44, sliding=True, useDataPointers=False, randomSplit=False, datePointer=False, save=False,
                  specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None, cropFirst=0,
-                 alignedData=False):
+                 alignedData=False, perTermScale=False):
         target = 'params' if targetDataMode is None else targetDataMode
         if (targetDataPath is not None and targetDataMode is None):
             target = 'target'
@@ -61,6 +62,7 @@ class DataHandler(object):
         self.transformed = {"test": False, "train": False}
         self.cropFirst = cropFirst
         self.alignedData = alignedData
+        self.perTermScale = perTermScale
         self._getCurrentRunId()
 
     def setupModes(self, volDepth, irDepth, targetName):
@@ -356,7 +358,7 @@ class DataHandler(object):
                         # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
                 targetDict['output'] = targetArray
             else:
-                # pdb.set_trace()
+                pdb.set_trace()
                 targetDict['output'] = self._reshapeToPredict(
                     np.asarray(targetDict['input'][inWidth:, :, :outWidth, self.channelStart:self.channelEnd]),
                     outDepth).reshape((-1, outDepth))  # skip first
@@ -412,6 +414,8 @@ class DataHandler(object):
     def _setDataFiles(self, data, mode):
         if (self.targetName.lower() == "deltair" and mode.lower() != self.targetName.lower()):
             data = data[:, self.cropFirst:]
+        if (self.perTermScale):
+            data = cu.rScale(data, self)
         if (mode.lower() == 'vol'):
             self.volatilities = data
         elif (mode.lower() == 'ir'):
