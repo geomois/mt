@@ -255,18 +255,8 @@ class DataHandler(object):
                     self.trainData["output"] = outPut
                     modulo = len(self.dataPointers['vol'])
                 else:
-                    self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
-                    if (self.target is not None):
-                        self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
-                    if (self.predictive is not None and not self.transformed['train']):
-                        self._feedTransform('train')
-                    if (pipeline is not None):
-                        # pdb.set_trace()
-                        self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
-                    if (self.saveProcessedData):
-                        suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
-                            self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
-                        self._saveProcessedData(suffix, 'train')
+                    if (len(self.trainData["input"]) == 0):
+                        self.splitTrainData(pipeline)
                     modulo = len(self.inputSegments)
 
             if (randomDraw):
@@ -303,6 +293,20 @@ class DataHandler(object):
         self.lastBatchPointer = (self.lastBatchPointer + batchSize) % modulo
 
         return np.asarray(np.float32(trainX)), np.asarray(np.float32(trainY))
+
+    def splitTrainData(self, pipeline=None):
+        self.trainData["input"] = self.inputSegments[self.splitBooleanIndex]
+        if (self.target is not None):
+            self.trainData["output"] = self.outputSegments[self.splitBooleanIndex]
+        if (self.predictive is not None and not self.transformed['train']):
+            self._feedTransform('train')
+        if (pipeline is not None):
+            # pdb.set_trace()
+            self.trainData["output"] = pipeline.fit_transform(self.trainData["output"])
+        if (self.saveProcessedData):
+            suffix = 'train' + str(self.specialPrefix) + str(self.batchSize) + "_w" + str(
+                self.segmentWidth) + '_' + str(self.volDepth) + '_' + str(self.irDepth)
+            self._saveProcessedData(suffix, 'train')
 
     def _feedTransform(self, data):
         """
@@ -358,7 +362,6 @@ class DataHandler(object):
                         # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
                 targetDict['output'] = targetArray
             else:
-                pdb.set_trace()
                 targetDict['output'] = self._reshapeToPredict(
                     np.asarray(targetDict['input'][inWidth:, :, :outWidth, self.channelStart:self.channelEnd]),
                     outDepth).reshape((-1, outDepth))  # skip first
@@ -488,15 +491,18 @@ class DataHandler(object):
         return inPut
 
     def forceSimplify(self):
-        if (self.predictive is not None):
-            if (not self.transformed['train']):
-                self._feedTransform('train')
-            self.trainData['input'] = self._simplify(self.trainData['input'])
-            self.trainData['output'] = self._simplify(self.trainData['output'])
-            if (not self.transformed['test']):
-                self._feedTransform('test')
-            self.testData['input'] = self._simplify(self.testData['input'])
-            self.testData['output'] = self._simplify(self.testData['output'])
+        # if (self.predictive is not None):
+        if (self.volatilities is None or self.ir is None):
+            self.splitTestData()
+            self.splitTrainData()
+        if (not self.transformed['train']):
+            self._feedTransform('train')
+        self.trainData['input'] = self._simplify(self.trainData['input'])
+        self.trainData['output'] = self._simplify(self.trainData['output'])
+        if (not self.transformed['test']):
+            self._feedTransform('test')
+        self.testData['input'] = self._simplify(self.testData['input'])
+        self.testData['output'] = self._simplify(self.testData['output'])
 
     def _simplify(self, x):
         x = np.asarray(x)
