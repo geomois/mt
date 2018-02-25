@@ -45,7 +45,11 @@ class GraphHandler(object):
                     self.saver.restore(self.session, self.modelPath + fileName)
             else:
                 self.fileName = fileName
-                self.saver.restore(self.session, self.modelPath + fileName)
+                try:
+                    self.saver.restore(self.session, self.modelPath + fileName)
+                except:
+                    self.saver.restore(self.session, check.model_checkpoint_path)
+
             self.predictOperation = tf.get_collection("predict")[0]
             self.inputPlaceholder = x_pl
             self.outputPlaceholder = y_pl

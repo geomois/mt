@@ -334,7 +334,7 @@ class NeuralNet(object):
     def derivationProc(self, out, totalDepth, xShape):
         # pdb.set_trace()
         # temp =  [self.applyPipeLine(tType='inverse', x=out[0][0][0], mode='input').reshape(1,1,30,-1)]
-        der, wA = cu.transformDerivatives(out, 0, totalDepth, xShape)
+        der = cu.transformDerivatives(out, 0, totalDepth, xShape)
         # pdb.set_trace()
         # der = self.applyPipeLine(tType='inverse', x=der.T, mode='input').T
         # der = self.inputPipeline.inverse_transform(der) / 30

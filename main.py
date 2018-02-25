@@ -624,9 +624,9 @@ def main(_):
                                          skip=optionDict['skip'], part=channelRange)
             ffolder = optionDict['checkpoint_dir'] + modelName + "/"
             try:
-                np.save(ffolder + "sigmas.npy", sigmas)
+                np.save(ffolder + "mapped_sigmas.npy", sigmas)
             except:
-                np.save(optionDict['suffix'] + 'sigmas.npy', sigmas)
+                np.save(optionDict['suffix'] + 'mapped_sigmas.npy', sigmas)
         else:
             gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
