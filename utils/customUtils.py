@@ -22,6 +22,15 @@ optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency"
               "saveProcessedData", "calibrate_sigma", "irType", "calibrate", "weight_init", "decay_staircase",
               "outDims", "input_dims", "output_dims"]
 
+dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 5475, 7300, 9125],
+              "libor": [0, 1, 2, 7, 14, 30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 395, 425, 456,
+                        486, 516, 547, 577, 607, 638, 668, 698, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285,
+                        3650, 4380, 5475, 7300, 9125, 10950, 14600, 18250],
+              "eonia": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 547, 730, 1095, 1460, 1825,
+                        2190, 2555, 2920, 3285, 3650, 4380, 5475, 7300, 9125, 10950, 12775, 14600, 18250],
+              "clean": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365]
+              }
+
 
 def toDatetime(d):
     return date(d.year(), d.month(), d.dayOfMonth())
@@ -99,13 +108,15 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
     lin = (np.linspace(1, derivative.shape[1], num=derivative.shape[1])).tolist()
     # dd = np.arange(1, derivative.shape[1] + 1) / 360
     # dd = dd.tolist()
+    times = np.asarray(dateInDays['libor'])
     dd.reverse()
     dt.reverse()
     lin.reverse()
     dt = np.asarray(dt)
     lin = np.asarray(lin)
     weights = np.logspace(1 / 30, 1, num=30) / 10
-    # pdb.set_trace()
+    Ddt = -(dt / (1 - dt))  # relative distance from t-s in Actual/360 convention
+    pdb.set_trace()
     for i in range(step):
         temp = []
         tWA = []
@@ -117,7 +128,15 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
             # integral = simps((derivative[j] - 1) / dt, dd)
             # integral = simps(-(derivative[j] - 1) / lin, dd) / 30
             # integral = simps((derivative[j] - 1) / dt, lin)
-            integral = simps(np.log((1 - derivative[j]) / (1 - dt)), dd)
+
+            # wA = np.sum(((derivative[j]) / (2 - ((times[j] * 0.0027) / lin))))
+            # norm = simps(((derivative[j]) / (2 - ((times[j] * 0.0027) / lin))), dd)
+            # integral = simps(np.log((1 - derivative[j]) / (1 - dt)), dd)
+            integral = simps(np.log((derivative[j] - 1) / (dt / Ddt)), dd)
+            # integral = simps(np.log((derivative[j] - 1 - dt) / -dt), dd)
+
+            # integral = simps(np.log((1 - derivative[j]) / (1 - dt)), dt[::-1])
+            # ttt = simps(np.log((1 - derivative[j]) / (1 - dt)), dd)
             # wA=  np.linalg.norm(np.log((1 - derivative[j]) / -(dt-1))/ (1+dt))/30
             # wA = np.average(np.log((1 - derivative[0]) / -(dt - 1)) / (dt))/30
             # integral= wA
@@ -127,30 +146,30 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape, Dt=0.0001
             # wA = np.average((1 - derivative[j]) * (1+dt) * weights)
 
             # wA = simps((1 - derivative[j]) / (dt), dd)
-            # tWA.append(wA)
 
             # norm = np.linalg.norm((1 - derivative[j]) * (1 + dt)) / depth
 
             # norm = np.average(np.log((1 - derivative[j]) / dt) * weights)
-            # tNorm.append(norm)
 
             # integral = simps( (np.log((derivative - ((dt+2*Dt)/Dt))/(1-((2*Dt)/Dt))))/dt, dd) #minus is not needed as we have t=0 so dt is in reality negative
 
             # integral = 1 - np.exp(-simps(derivative[j]) / len(dd))
             # weighted = integral * dd
             # expInt = 1 - np.exp(-integral)
+            # tWA.append(wA)
+            # tNorm.append(norm)
             temp.append(integral)
             # temp.append(np.sum(derivative[j]))
 
             # temp.append(np.average(derivative[j]))
             # temp.append(np.sum(np.abs(derivative[j])))
             # temp.append(np.average(np.abs(derivative[j])))
-        # der = np.vstack((der, temp))
-        # der[i] = np.abs(temp)
+            # der = np.vstack((der, temp))
+            # der[i] = np.abs(temp)
         der[i] = temp
-        # derWA[i] = wA
-        # derNorm[i] = norm
-    # der[der < 0] = np.average(der[der > 0])
+        # derWA[i] = tWA
+        # derNorm[i] = tNorm
+        # der[der < 0] = np.average(der[der > 0])
     # print("wA: " + str(np.average(derWA)) + " norm: " + str(np.average(derNorm)))
     # pdb.set_trace()
     return der
