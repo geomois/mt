@@ -508,7 +508,7 @@ class SwaptionGen(du.TimeSeriesData):
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
         print("end")
-        pdb.set_trace()
+        # pdb.set_trace()
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,
