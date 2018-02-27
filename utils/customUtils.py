@@ -31,6 +31,8 @@ dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650,
               "clean": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365]
               }
 
+Dt = 0.0001
+
 
 def toDatetime(d):
     return date(d.year(), d.month(), d.dayOfMonth())
@@ -104,20 +106,27 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     dd = 1 / np.linspace(1, derivative.shape[1], num=derivative.shape[1])
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
-    dd=dd[::-1]
+    dd = dd[::-1]
     Ddt = dt / (1 - dt)  # relative distance s in Actual/360 convention
     times = np.asarray(dateInDays['libor'])
     dt = np.asarray(dt)
     lin = np.asarray(lin)
     weights = np.logspace(1 / 30, 1, num=30) / 10
+    # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            integral = simps(np.log((derivative[j] - 1) / -(dt / Ddt)), dd)
+            integral = simps(-np.log((1 - derivative[0])), -lin) / derivative.shape[1]
             temp.append(integral)
         der[i] = temp
     return der
-
+# integral = simps((1 - derivative[0]), -dt)
+# integral = simps(np.log((derivative[j] - 1) / -(1 - dt)), dd)
+# integral = simps(np.log((1 - derivative[35])), lin )
+# integral = np.abs(simps(np.log((1 - derivative[j])), -lin / 30))
+# integral = simps(np.log((derivative[j] - 1) / -(1 - dt)), dt)
+# integral = np.average(simps(dt-derivative[j],-dt)/30)
+# integral = simps(1 - derivative[j], -dt)
 
 def reshapeMultiple(array, depth, start, end):
     cc = []
