@@ -103,23 +103,22 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     der = np.zeros((step, datapoints))
 
     depth = derivative.shape[1]
-    dd = 1 / np.linspace(1, derivative.shape[1], num=derivative.shape[1])
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
-    dd = dd[::-1]
-    Ddt = dt / (1 - dt)  # relative distance s in Actual/360 convention
     times = np.asarray(dateInDays['libor'])
-    dt = np.asarray(dt)
     lin = np.asarray(lin)
     weights = np.logspace(1 / 30, 1, num=30) / 10
+    denom = derivative.shape[1]
     # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            integral = simps(-np.log((1 - derivative[0])), -lin) / derivative.shape[1]
+            integral = simps(-np.log((derivative[j])), -dt) / derivative.shape[1]
             temp.append(integral)
         der[i] = temp
     return der
+
+
 # integral = simps((1 - derivative[0]), -dt)
 # integral = simps(np.log((derivative[j] - 1) / -(1 - dt)), dd)
 # integral = simps(np.log((1 - derivative[35])), lin )
@@ -137,7 +136,7 @@ def reshapeMultiple(array, depth, start, end):
             temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
             cc.append((i * array.shape[3]) + j)
             o[(i * array.shape[3]) + j] = temp
-    return o
+    return np.abs(o)
 
 
 def loadSavedScaler(path, identifier=None):

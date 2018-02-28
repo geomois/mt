@@ -467,6 +467,7 @@ class SwaptionGen(du.TimeSeriesData):
                     for j in range(len(predictive_model)):
                         out.append(predictive_model[j].predict(vol=dataDict['vol'], ir=dataDict['ir'][:, j:j + 1])[0])
                     params = np.abs(np.average(out)).reshape((-1, 1))
+                    # params = np.average(out).reshape((-1, 1))
                 else:
                     params = np.abs(predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir']))
 
@@ -478,8 +479,8 @@ class SwaptionGen(du.TimeSeriesData):
             # self.setupModel(alpha=params[0])
             params = [[params[0, 0], 0]]  # shape (1,2)
             # print(params)
-            # outcome.append(params)
-            # continue
+            outcome.append(params)
+            continue
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)
@@ -509,6 +510,9 @@ class SwaptionGen(du.TimeSeriesData):
             np.save("sigmaStatic30.npy", outcomeStatic)
         print("end")
         # pdb.set_trace()
+        outcome = np.asarray(outcome).reshape(-1,2)
+        plt.plot(outcome[:, 0])
+
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,
