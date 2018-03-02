@@ -532,6 +532,32 @@ def loadMultipleNetworks():
     return ghList
 
 
+def prepareCalibration():
+    channelRange = -1
+    if (optionList is not None):
+        gh = loadMultipleNetworks()
+    else:
+        gh = setupNetwork(options=optionDict, gradientFlag=True)
+        if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
+            pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
+            gh.model.setInputPipelineList(pipelineList)
+
+        if (len(optionDict['channel_range']) > 1):
+            channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
+        else:
+            channelRange = [0, int(optionDict['channel_range'][0])]
+
+    return gh, channelRange
+
+
+def saveCalibrationResults(res):
+    ffolder = optionDict['checkpoint_dir'] + modelName + "/"
+    try:
+        np.save(ffolder + "mapped_sigmas.npy", res)
+    except:
+        np.save(optionDict['suffix'] + 'mapped_sigmas.npy', res)
+
+
 def main(_):
     _ = get_options()
     initDirectories()
@@ -606,27 +632,15 @@ def main(_):
     if optionDict['calculate_gradient']:
         if optionDict['calibrate_sigma']:
             swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
-            channelRange = -1
-            if (optionList is not None):
-                gh = loadMultipleNetworks()
-            else:
-                gh = setupNetwork(options=optionDict, gradientFlag=True)
-                if (optionDict['use_input_pipeline'] and optionDict['input_pipeline'] is not None):
-                    pipelineList = cu.loadSavedScaler(optionDict['input_pipeline'])
-                    gh.model.setInputPipelineList(pipelineList)
-
-                if (len(optionDict['channel_range']) > 1):
-                    channelRange = [int(optionDict['channel_range'][0]), int(optionDict['channel_range'][1])]
-                else:
-                    channelRange = [0, int(optionDict['channel_range'][0])]
-
+            gh, channelRange = prepareCalibration()
             sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'],
                                          skip=optionDict['skip'], part=channelRange)
-            ffolder = optionDict['checkpoint_dir'] + modelName + "/"
-            try:
-                np.save(ffolder + "mapped_sigmas.npy", sigmas)
-            except:
-                np.save(optionDict['suffix'] + 'mapped_sigmas.npy', sigmas)
+            saveCalibrationResults(sigmas)
+        elif optionDict['calibrate_alpha']:
+            ir = irc.getIRCurves(getIrModel(), optionDict['currency'], optionDict['irType'])
+            gh, _ = prepareCalibration()
+            alphas = ir.calibrate_alpha(gh, modelName, dataLength=optionDict['batch_width'], skip=optionDict['skip'])
+            # saveCalibrationResults(alphas)
         else:
             gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
@@ -737,6 +751,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model', type=str, default='hullwhite', help='Interest rate model')
     parser.add_argument('--calibrate', action='store_true', help='Calibrate history')
     parser.add_argument('--calibrate_sigma', action='store_true', help='Calibrate only sigma')
+    parser.add_argument('--calibrate_alpha', action='store_true', help='Calibrate only alpha')
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')
@@ -807,6 +822,7 @@ if __name__ == '__main__':
             # Keep basic operations
             optionDict['calibrate'] = OPTIONS.calibrate
             optionDict['calibrate_sigma'] = OPTIONS.calibrate_sigma
+            optionDict['calibrate_alpha'] = OPTIONS.calibrate_alpha
             optionDict['exportForwardRates'] = OPTIONS.exportForwardRates
             optionDict['is_train'] = OPTIONS.is_train
             optionDict['retrain'] = OPTIONS.retrain

@@ -351,6 +351,9 @@ class NeuralNet(object):
         # out = np.asarray([[0.01]])
         # return out
         # chainedOutput = None
+        # pdb.set_trace()
+        # if(ir.shape[1] != self.irChannels):
+        #     ir = ir[:, cu.index_Map_Libor_Eonia]
         chained_pl = chainedOutput = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)

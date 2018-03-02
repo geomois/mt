@@ -19,18 +19,21 @@ def generate_paths(num_paths, timestep, sequence):
 
 def calcMean(forward, sigma, a, time):
     fw = []
-    for t in time:
-        fw.append(forward.zeroRate(t, ql.Continuous).rate())
+    if type(forward) == list:
+        fw = forward
+    else:
+        for t in time:
+            fw.append(forward.zeroRate(t, ql.Continuous).rate())
     mm = fw + (1 / 2.0) * np.power(sigma / a * (1.0 - np.exp(-a * time)), 2)
     return mm
 
 
-def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=1000):
+def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=10):
     dateList = [swo._dates[430]]  # [swo._dates[50], swo._dates[430], swo._dates[550], swo._dates[650]]
     for l in dateList:
         ddate = l
         refDate = ql.Date(ddate.day, ddate.month, ddate.year)
-        months = 50
+        months = 6
         timestep = months * 30
         length = (months * 30) / 365  # in years
         # params, ir = runModel(swo, ddate, dataLength, 0, predictive_model)
@@ -39,30 +42,33 @@ def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumbe
         swo.set_date(l)
         ir = swo._ircurve
         avg = np.zeros((4, 1 + (months * 30)))
-        a = [0.0001, 0.001, 0.01, 0.1]
+        a = [0.0001, 0.9]
         for i in range(len(a)):
             alpha = a[i]
-            sigma = 0.01
-            # levels = np.asarray(ir._levels)[0]
-            # fw = ir.curveToArray(levels, ir[ddate])
+            sigma = 0.5
+            levels = np.asarray(ir._levels)[0]
+            fw = ir.curveToArray(levels, ir[ddate])
             # plt.plot(fw)
             # forward_rate = ir.curveimpl(refDate, fw)
+            forward_rate=[0.02]
             ql.Settings.instance().evaluationDate = refDate
             # spot_curve = ir[ddate]
-            spot_curve = ql.FlatForward(refDate, ql.QuoteHandle(ql.SimpleQuote(0.05)), ql.Actual360())
+            spot_curve = ql.FlatForward(refDate, ql.QuoteHandle(ql.SimpleQuote(forward_rate[0])), ql.Actual360())
             spot_curve_handle = ql.YieldTermStructureHandle(spot_curve)
             hw_process = ql.HullWhiteProcess(spot_curve_handle, alpha, sigma)
             rng = ql.GaussianRandomSequenceGenerator(
                 ql.UniformRandomSequenceGenerator(timestep, ql.UniformRandomGenerator()))
             seq = ql.GaussianPathGenerator(hw_process, length, timestep, rng, False)
             time, paths = generate_paths(simNumber, timestep, seq)
-            # runModel(paths, predictive_model)
+            runModel(paths, predictive_model)
             # pdb.set_trace()
+            plotSimulations(paths[:int(np.floor(len(paths) / 2))], timestep, time)
+            plotMean(paths, timestep, time, alpha, sigma, forward_rate)
             avg[i] = np.average(paths, axis=0)
-            plt.plot(avg[i],label=a[i])
+            # plt.plot(avg[i],label=a[i])
         plt.legend()
 
-        print(((avg[0]-avg[1])**2).mean())
+        print(((avg[0] - avg[1]) ** 2).mean())
         print(((avg[1] - avg[2]) ** 2).mean())
         print(((avg[2] - avg[3]) ** 2).mean())
         # print(np.average(paths,axis=0))
@@ -77,23 +83,22 @@ def runModel(paths, predictive_model):
     sc = StandardScaler()
     # scaled = sc.fit_transform(paths.reshape(-1, 1))
     # scaled = np.repeat(scaled[:], 44, axis=1)
-
     method = ql.LevenbergMarquardt()
     end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
     constraint = ql.PositiveConstraint()
-    der = np.zeros((paths.shape[0], 6))
+    s = predictive_model.inputPlaceholder.shape[1].value
+    der = np.zeros((paths.shape[0], paths.shape[1] - s))
     for j in range(paths.shape[0]):
         scaled = sc.fit_transform(paths[j, :].reshape(-1, 1))
         scaled = np.repeat(scaled[:], 44, axis=1)
         params = []
-        s = 30
-        for i in range(0, scaled.shape[0] - s, s):
+        for i in range(0, scaled.shape[0] - s, 1):
             dataDict = {'vol': np.empty((0, scaled.shape[1])), 'ir': scaled[i:i + s, :]}
             params.append(predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir']))
         der[j] = params
-    print(params)
+    # print(params)
     pdb.set_trace()
-    return params
+    return der
 
 
 # def runModel(swo, refDate, dataLength, skip, predictive_model):
@@ -139,6 +144,7 @@ def runModel(paths, predictive_model):
 
 def plotSimulations(paths, timestep, time):
     num_paths = len(paths)
+    plt.figure()
     for i in range(num_paths):
         plt.plot(time, paths[i, :], lw=0.8, alpha=0.6)
     plt.title("Hull-White Short Rate Simulation")

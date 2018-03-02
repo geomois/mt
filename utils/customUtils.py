@@ -28,8 +28,10 @@ dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650,
                         3650, 4380, 5475, 7300, 9125, 10950, 14600, 18250],
               "eonia": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 547, 730, 1095, 1460, 1825,
                         2190, 2555, 2920, 3285, 3650, 4380, 5475, 7300, 9125, 10950, 12775, 14600, 18250],
-              "clean": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365]
+              "clean": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 547, 730, 1095, 1460, 1825,
+                        2190, 2555, 2920, 3285, 3650]
               }
+index_Map_Libor_Eonia = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 21, 27, 28, 29, 30, 31, 32, 33, 34, 35]
 
 Dt = 0.0001
 
@@ -109,13 +111,16 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     lin = np.asarray(lin)
     weights = np.logspace(1 / 30, 1, num=30) / 10
     denom = derivative.shape[1]
-    # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            integral = simps(-np.log((derivative[j])), -dt) / derivative.shape[1]
+            # pdb.set_trace()
+            integral = simps(-np.log((derivative[j])), -dt) / denom  # 1st
+            # integral = simps(np.log((1-derivative[j])/2), -dt)/denom
+            # integral = np.log(simps(derivative[0]-1, -lin)) / denom # 2nd
+            # integral = np.log(derivative[j][-1])/denom # 3rd
             temp.append(integral)
-        der[i] = temp
+            der[i] = temp
     return der
 
 
@@ -136,7 +141,8 @@ def reshapeMultiple(array, depth, start, end):
             temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
             cc.append((i * array.shape[3]) + j)
             o[(i * array.shape[3]) + j] = temp
-    return np.abs(o)
+    # return np.abs(o)
+    return o
 
 
 def loadSavedScaler(path, identifier=None):

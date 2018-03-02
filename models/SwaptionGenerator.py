@@ -411,8 +411,7 @@ class SwaptionGen(du.TimeSeriesData):
         _, errors = self.__errors()
         return (orig_errors, errors)
 
-    def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, session=None, x_pl=None, part=None,
-                        skip=0):
+    def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, part=None, skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
         outcome = []
@@ -479,8 +478,8 @@ class SwaptionGen(du.TimeSeriesData):
             # self.setupModel(alpha=params[0])
             params = [[params[0, 0], 0]]  # shape (1,2)
             # print(params)
-            outcome.append(params)
-            continue
+            # outcome.append(params)
+            # continue
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)
@@ -499,7 +498,7 @@ class SwaptionGen(du.TimeSeriesData):
                 # print(i, ' Pred model: ', paramsC, "Static: ", paramsCStatic, '\n')
             else:
                 pass
-                # print(i, paramsC, '\n')
+                print(i, paramsC, '\n')
             # print('\n', i, paramsC, '\n')
             # try:
             #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
@@ -510,8 +509,8 @@ class SwaptionGen(du.TimeSeriesData):
             np.save("sigmaStatic30.npy", outcomeStatic)
         print("end")
         # pdb.set_trace()
-        outcome = np.asarray(outcome).reshape(-1,2)
-        plt.plot(outcome[:, 0])
+        outcome = np.asarray(outcome).reshape(-1, 2)
+        plt.plot(outcome[:, 0], label="")
 
         return outcome
 
@@ -658,11 +657,21 @@ def get_swaptiongen(modelMap=hullwhite_analytic, currency='GBP', irType='Libor',
     # ,'GBP','EUR','USD','CNY'
     # ,'libor','euribor','shibor','ois'
     index = None
-    if (str(currency).lower() == 'gbp' and str(irType).lower() == 'libor'):
-        index = ql.GBPLibor(ql.Period(6, ql.Months))
-    elif (str(currency).lower() == 'eur' and str(irType).lower() == 'euribor'):
-        index = ql.Euribor(ql.Period(6, ql.Months))
-        # pNode=du.h5_tsc_node #custom
+    if (str(currency).lower() == 'gbp'):
+        if (str(irType).lower() == 'libor'):
+            index = ql.GBPLibor(ql.Period(6, ql.Months))
+        elif (str(irType).lower() == 'ois'):
+            index = ql.Sonia()
+    elif (str(currency).lower() == 'eur'):
+        if (str(irType).lower() == 'euribor'):
+            index = ql.Euribor(ql.Period(6, ql.Months))
+        elif (str(irType).lower() == 'ois'):
+            index = ql.Eonia()
+    elif (str(currency).lower() == 'usd'):
+        if (str(irType).lower() == 'libor'):
+            index = ql.USDLibor(ql.Period(6, ql.Months))
+        elif (str(irType).lower() == 'ois'):
+            index = ql.FedFunds()
 
     if (volFileName is None or irFileName is None):
         swo = SwaptionGen(index, modelMap, parentNode=pNode, irType=irType)

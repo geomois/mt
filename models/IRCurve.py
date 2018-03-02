@@ -3,6 +3,7 @@ from utils.ahUtils import *
 from utils.customUtils import getImpliedForwardCurve
 import utils.dbDataPreprocess as dbc
 from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
 
 seed = 1027
 # Interest Rate Curve hdf5 node
@@ -33,6 +34,10 @@ class IRCurve(du.TimeSeriesData):
         ts = pd.Timestamp(date)
         refdate = ql.Date(ts.day, ts.month, ts.year)
         return self.__curveimpl(refdate, data)
+
+    def getValues(self, date):
+        data = super(IRCurve, self).__getitem__(date)
+        return data
 
     def rebuild(self, date, vals):
         if self._pipeline is None:
@@ -285,6 +290,68 @@ class IRCurve(du.TimeSeriesData):
                 fwRates.append(curve.forwardRate(start, end, ql.Continuous).rate())
 
         return np.asarray(fwRates)
+
+    def calibrate_alpha(self, predictive_model, modelName, dates=None, dataLength=1, skip=0):
+        outcome = []
+        outcomeStatic = []
+        if dates is None:
+            dates = self._dates
+        ir = np.zeros((dataLength, self.getValues(dates[0]).shape[0]))
+        for i, ddate in enumerate(dates):
+            if (skip == -1):
+                if (i % 80 == 0):
+                    alpha = self.calibrateStaticAlpha(i, i + 80)
+            if (i < skip):
+                if (i + dataLength - 1 >= skip):
+                    ir[i] = self.getValues(ddate)
+                continue
+            if (i + 1 < dataLength):
+                ir[i] = self.getValues(ddate)
+                continue
+            if (dataLength == 1):
+                params = predictive_model.predict(vol=None, ir=ir)
+            else:
+                ir[-1] = self.getValues(ddate)
+                if (type(predictive_model) == list):
+                    out = []
+                    for j in range(len(predictive_model)):
+                        out.append(predictive_model[j].predict(vol=None, ir=ir[:, j:j + 1])[0])
+                    params = np.abs(np.average(out)).reshape((-1, 1))
+                else:
+                    params = np.abs(predictive_model.predict(vol=None, ir=ir))
+
+                ir[:-1] = ir[1:]
+
+            # self.setupModel(alpha=params[0])
+            params = [params[0, 0]]
+            # print(params)
+            outcome.append(params)
+            continue
+            self.model.setParams(ql.Array(params[0]))
+
+            if (skip == -1):
+                params = [[alpha, 0]]  # shape (1,2)
+                self.model.setParams(ql.Array(params[0]))
+                paramsCStatic = params[0]
+                paramsCStatic = np.append(np.asarray(paramsCStatic))
+                outcomeStatic.append(paramsCStatic)
+                # print(i, ' Pred model: ', paramsC, "Static: ", paramsCStatic, '\n')
+            else:
+                pass
+                # print(i, paramsC, '\n')
+            # print('\n', i, paramsC, '\n')
+            # try:
+            #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
+            # except RuntimeError:
+            #     objectiveAfter = np.nan
+
+        if (len(outcomeStatic) > 1):
+            np.save("sigmaStatic30.npy", outcomeStatic)
+        print("end")
+        outcome = np.asarray(outcome).reshape(-1)
+        plt.plot(outcome, label="")
+
+        return None
 
 
 def getIRCurves(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNode=du.h5_ts_node, irFileName=None):
