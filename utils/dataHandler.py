@@ -490,8 +490,12 @@ class DataHandler(object):
         inPut = inPut.reshape((1, inPut.shape[0], inPut.shape[1]))
         return inPut
 
-    def forceSimplify(self):
-        if(not self.delegatedFromFile):
+    def forceSimplify(self, mode="p"):
+        """
+        :param mode: p -> preserve data depth, l -> use only last time-point
+        :return:
+        """
+        if (not self.delegatedFromFile):
             # if (self.predictive is not None):
             if (self.volatilities is None or self.ir is None):
                 self.splitTestData()
@@ -504,6 +508,13 @@ class DataHandler(object):
         self.trainData['output'] = self._simplify(self.trainData['output'])
         self.testData['input'] = self._simplify(self.testData['input'])
         self.testData['output'] = self._simplify(self.testData['output'])
+        if (mode.lower() == 'l'):
+            if (len(self.trainData['input'].shape) == 3):
+                self.trainData['input'] = self.trainData['input'][:, -1, :]
+                self.testData['input'] = self.testData['input'][:, -1, :]
+            elif (len(self.trainData['input'].shape) == 4):
+                self.trainData['input'] = self.trainData['input'][:, :, -1, :]
+                self.testData['input'] = self.testData['input'][:, :, -1, :]
 
     def _simplify(self, x):
         x = np.asarray(x)

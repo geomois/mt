@@ -90,7 +90,11 @@ np.random.seed(42)
 def buildNN(dataHandler, swaptionGen=None, chainedModel=None):
     if (optionDict['architecture'][0] == 'd' or 'l' in optionDict['architecture'][0] or 'g' in
             optionDict['architecture'][0]):
-        dataHandler.forceSimplify()
+        if (optionDict['architecture'][0] == 'd'):
+            mode = 'l'
+        else:
+            mode = 'p'
+        dataHandler.forceSimplify(mode)
     testX, testY = dataHandler.getTestData()
     chained_pl = None
     if chainedModel is not None:
