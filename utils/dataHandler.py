@@ -491,16 +491,17 @@ class DataHandler(object):
         return inPut
 
     def forceSimplify(self):
-        # if (self.predictive is not None):
-        if (self.volatilities is None or self.ir is None):
-            self.splitTestData()
-            self.splitTrainData()
-        if (not self.transformed['train']):
-            self._feedTransform('train')
+        if(not self.delegatedFromFile):
+            # if (self.predictive is not None):
+            if (self.volatilities is None or self.ir is None):
+                self.splitTestData()
+                self.splitTrainData()
+            if (not self.transformed['train']):
+                self._feedTransform('train')
+            if (not self.transformed['test']):
+                self._feedTransform('test')
         self.trainData['input'] = self._simplify(self.trainData['input'])
         self.trainData['output'] = self._simplify(self.trainData['output'])
-        if (not self.transformed['test']):
-            self._feedTransform('test')
         self.testData['input'] = self._simplify(self.testData['input'])
         self.testData['output'] = self._simplify(self.testData['output'])
 
