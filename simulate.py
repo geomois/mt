@@ -28,7 +28,7 @@ def calcMean(forward, sigma, a, time):
     return mm
 
 
-def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=10):
+def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=100):
     dateList = [swo._dates[430]]  # [swo._dates[50], swo._dates[430], swo._dates[550], swo._dates[650]]
     for l in dateList:
         ddate = l
@@ -42,7 +42,7 @@ def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumbe
         swo.set_date(l)
         ir = swo._ircurve
         avg = np.zeros((4, 1 + (months * 30)))
-        a = [0.0001, 0.9]
+        a = [-0.9, 0.9]
         for i in range(len(a)):
             alpha = a[i]
             sigma = 0.5
@@ -60,7 +60,7 @@ def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumbe
                 ql.UniformRandomSequenceGenerator(timestep, ql.UniformRandomGenerator()))
             seq = ql.GaussianPathGenerator(hw_process, length, timestep, rng, False)
             time, paths = generate_paths(simNumber, timestep, seq)
-            runModel(paths, predictive_model)
+            # runModel(paths, predictive_model)
             # pdb.set_trace()
             plotSimulations(paths[:int(np.floor(len(paths) / 2))], timestep, time)
             plotMean(paths, timestep, time, alpha, sigma, forward_rate)

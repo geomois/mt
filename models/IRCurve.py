@@ -169,6 +169,7 @@ class IRCurve(du.TimeSeriesData):
             lr.fit(irPre[i, start:end].reshape(-1, 1), irAft[i, start:end].reshape(-1, 1))
             levelParams.append(lr.coef_[0, 0])
         levelParams = np.average(1 - np.asarray(levelParams))
+        # levelParams = np.average(1 - np.asarray(levelParams[0]))
         print(str(end) + " Fit params: ", levelParams)
         return levelParams
 
@@ -291,12 +292,13 @@ class IRCurve(du.TimeSeriesData):
 
         return np.asarray(fwRates)
 
-    def calibrate_alpha(self, predictive_model, modelName, dates=None, dataLength=1, skip=0):
+    def calibrate_alpha(self, predictive_model, modelName, dates=None, dataLength=1, skip=0, plot=False):
         outcome = []
         outcomeStatic = []
         if dates is None:
             dates = self._dates
         ir = np.zeros((dataLength, self.getValues(dates[0]).shape[0]))
+        print('Calibrating mean reversion on historic data...')
         for i, ddate in enumerate(dates):
             if (skip == -1):
                 if (i % 80 == 0):
@@ -347,11 +349,13 @@ class IRCurve(du.TimeSeriesData):
 
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
-        print("end")
         outcome = np.asarray(outcome).reshape(-1)
-        plt.plot(outcome, label="")
+        outcome = np.append(np.zeros(dataLength - 1), outcome)
+        if (plot):
+            plt.plot(outcome, label=modelName)
 
-        return None
+        print("end")
+        return outcome
 
 
 def getIRCurves(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNode=du.h5_ts_node, irFileName=None):
