@@ -643,8 +643,9 @@ def main(_):
         elif optionDict['calibrate_alpha']:
             ir = irc.getIRCurves(getIrModel(), optionDict['currency'], optionDict['irType'])
             gh, _ = prepareCalibration()
-            alphas = ir.calibrate_alpha(gh, modelName, dataLength=optionDict['batch_width'], skip=optionDict['skip'])
-            # saveCalibrationResults(alphas)
+            alphas = ir.calibrate_alpha(gh, OPTIONS.suffix, dataLength=optionDict['batch_width'],
+                                        skip=optionDict['skip'], plot=OPTIONS.plot)  # keep Options
+            saveCalibrationResults(alphas)
         else:
             gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
@@ -756,6 +757,7 @@ if __name__ == '__main__':
     parser.add_argument('--calibrate', action='store_true', help='Calibrate history')
     parser.add_argument('--calibrate_sigma', action='store_true', help='Calibrate only sigma')
     parser.add_argument('--calibrate_alpha', action='store_true', help='Calibrate only alpha')
+    parser.add_argument('--plot', action='store_true', help="Plot results")
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
     parser.add_argument('-he', '--historyEnd', type=str, default=-1, help='History end')
     parser.add_argument('--compare', action='store_true', help='Run comparison with nn ')

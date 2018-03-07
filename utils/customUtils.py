@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import re, pickle, os, pdb
 from utils.FunctionTransformer import FunctionTransformerWithInverse
-from scipy.integrate import simps
+from scipy.integrate import simps, trapz
 
 optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency", "gpu_memory_fraction", "suffix",
               "decay_steps", "weight_reg_strength", "irFileName", "model_dir", "historyStart", "test_frequency",
@@ -108,17 +108,17 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
     times = np.asarray(dateInDays['libor'])
-    lin = np.asarray(lin)
-    weights = np.logspace(1 / 30, 1, num=30) / 10
-    denom = derivative.shape[1]
+    denom = 0.001 * derivative.shape[1]
+    # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            # pdb.set_trace()
-            integral = simps(-np.log((derivative[j])), -dt) / denom  # 1st
-            # integral = simps(np.log((1-derivative[j])/2), -dt)/denom
-            # integral = np.log(simps(derivative[0]-1, -lin)) / denom # 2nd
-            # integral = np.log(derivative[j][-1])/denom # 3rd
+            # integral = simps(-np.log(1 - derivative[j]) / dt, -lin) / denom  # 1st
+            integral = simps(-np.log(1 - derivative[j]) / dt, -lin) * denom  # 1st
+            # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
+            # integral = -np.log(1 - derivative[j][-1]) / denom  # last
+            # integral = trapz(-np.log(1 - derivative[0])/dt, -lin) / denom # 2nd
+
             temp.append(integral)
             der[i] = temp
     return der
@@ -144,6 +144,8 @@ def reshapeMultiple(array, depth, start, end):
     # return np.abs(o)
     return o
 
+
+#
 
 def loadSavedScaler(path, identifier=None):
     if (os.path.isfile(path)):
