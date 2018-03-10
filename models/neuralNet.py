@@ -71,14 +71,10 @@ class NeuralNet(object):
                     with tf.variable_scope('convLayer' + str(convcount)):
                         kernelSize = self.kernels.popleft()
                         depthSize = self.depths.popleft()
-                        # if (layer is not None):
-                        #     nbChannels = layer.get_shape().as_list()[3]
                         layer = self._depthWiseConvLayer(layer, kernelSize, nbChannels=nbChannels,
                                                          depth=depthSize, sep=separable,
                                                          activationFunc=self._getFunction('act', 'c'),
                                                          initializer=self._getFunction('init', 'c')())
-                        # maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
-                        # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     convcount += 1
                 elif ('l' in l.lower() or "lstm" in l.lower() or 'g' in l.lower() or "gru" in l.lower()):
@@ -105,7 +101,6 @@ class NeuralNet(object):
                             layer = tf.reshape(layer, [-1, inShape[1] * inShape[2]])
 
                         if (chainedValues is not None):
-                            # pdb.set_trace()
                             layer = tf.concat([layer, chainedValues], axis=1)
                         tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
                     flatcount += 1
@@ -164,7 +159,6 @@ class NeuralNet(object):
 
     def _denseLayer(self, x, units, activationFunc=None, regularizer=tf.contrib.layers.l2_regularizer,
                     initializer=tf.contrib.layers.xavier_initializer()):
-        # pdb.set_trace()
         weights = tf.get_variable("w", [x.get_shape()[1], units], regularizer=regularizer(self.regularizationStrength),
                                   initializer=initializer)
 
@@ -179,7 +173,6 @@ class NeuralNet(object):
     def _recurrentLayer(self, x, units, num_layers, ttype, activationFunc=None,
                         regularizer=tf.contrib.layers.l2_regularizer,
                         initializer=tf.contrib.layers.xavier_initializer()):
-        # pdb.set_trace()
         if (ttype == 'l'):
             recurrentModule = tf.nn.rnn_cell.MultiRNNCell([tf.contrib.rnn.LSTMCell(units) for _ in range(num_layers)])
         else:
@@ -208,12 +201,6 @@ class NeuralNet(object):
                 return self.functionDict[functionType].popleft()
 
         return self.functionDictDefault[functionType][0]
-        # if (functionType == 'init'):
-        #     return tf.contrib.layers.xavier_initializer
-        # elif (functionType == 'reg'):
-        #     return return self.functionDict[functionType][0]
-        # elif (functionType == 'act'):
-        #     return self.functionDict[functionType][0]
 
     def _variable_summaries(self, var, name):
         with tf.name_scope('summaries'):
@@ -226,20 +213,8 @@ class NeuralNet(object):
             tf.summary.scalar('min/' + name, tf.reduce_min(var))
             tf.summary.histogram(name, var)
 
-            # def accuracy(self, logits, labels):
-            #     with tf.name_scope("accuracy"):
-            # correct_predictions = tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1))
-            # accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
-            # tf.summary.scalar('accuracy', accuracy)
-
-            # return accuracy
-
     def loss(self, pred, y):
         with tf.name_scope("loss"):
-            # cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy')
-            # loss = tf.reduce_mean(cross_entropy)
-            # loss = tf.add(loss, sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
-            # tf.losses.log_loss()
             loss = tf.losses.mean_squared_error(y, pred)
             tf.summary.scalar('loss_regularized', loss)
 
@@ -303,18 +278,12 @@ class NeuralNet(object):
         return inPut
 
     def applyPipeLine(self, tType, x, mode, useTf=False):
-        # pdb.set_trace()
         if (mode == 'input'):
             modeFunc = self.getCurrentInputPipeline
         else:
             modeFunc = self.getCurrentPipeline
         for i in range(x.shape[1]):
-            # if (i <= len(self.pipelineList)):
             pp = modeFunc(i)
-            # if (tType == 'inverse'):
-            #     x[:, i] = pp.inverse_transform(x[:, i].reshape((-1, 1)))[:, 0]
-            # else:
-            #     x[:, i] = pp.transform(x[:, i].reshape((-1, 1)))[:, 0]
             func = self._getTransformationFunction(tType, 'pre', pp)
             if func is not None:
                 if (useTf):
@@ -330,35 +299,18 @@ class NeuralNet(object):
                     x[:, i] = self._getTransformationFunction(tType, 'scale', pp)(x.T)
         return x
 
-    # @staticmethod
     def derivationProc(self, out, totalDepth, xShape):
-        # pdb.set_trace()
-        # temp =  [self.applyPipeLine(tType='inverse', x=out[0][0][0], mode='input').reshape(1,1,30,-1)]
         der = cu.transformDerivatives(out, 0, totalDepth, xShape)
-        # pdb.set_trace()
-        # der = self.applyPipeLine(tType='inverse', x=der.T, mode='input').T
-        # der = self.inputPipeline.inverse_transform(der) / 30
-
         if (der.shape[1] > 1):
             out = np.average(der, axis=0).reshape((-1, 1))
         else:
             out = np.average(der).reshape((-1, 1))
-        # out = [0.025]
-        # out = [0.001]
         return out
 
     def predict(self, vol, ir, sess, x_pl, *args):
-        # out = np.asarray([[0.01]])
-        # return out
-        # chainedOutput = None
-        # pdb.set_trace()
-        # if(ir.shape[1] != self.irChannels):
-        #     ir = ir[:, cu.index_Map_Libor_Eonia]
         chained_pl = chainedOutput = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
-            # if (len(self.pipelineList) > 0 or self.inputPipeline is not None):
-            #     chainedOutput = self.getCurrentInputPipeline(0).transform(chainedOutput)
             chained_pl = self.chainedModel['placeholder']
 
         totalDepth = self.volChannels + self.irChannels
@@ -400,5 +352,4 @@ class NeuralNet(object):
                 out = np.append(chainedOutput, out)
             out = out.reshape((1, -1))
             out = out.tolist()
-        # pdb.set_trace()
         return out

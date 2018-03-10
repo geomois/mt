@@ -63,7 +63,7 @@ class DataHandler(object):
         self.cropFirst = cropFirst
         self.alignedData = alignedData
         self.perTermScale = perTermScale
-        self._getCurrentRunId()
+        self.getCurrentRunId()
 
     def setupModes(self, volDepth, irDepth, targetName):
         modes = []
@@ -693,7 +693,7 @@ class DataHandler(object):
             dictToSave = self.testData
 
         for dataType in dictToSave:
-            fileName = self.filePrefix + self._getCurrentRunId() + '_' + fileSuffix + '_' + str(dataType) + ".npy"
+            fileName = self.filePrefix + self.getCurrentRunId() + '_' + fileSuffix + '_' + str(dataType) + ".npy"
             np.save(fileName, dictToSave[dataType])
 
     def findTwinFiles(self, fileName):
@@ -713,7 +713,7 @@ class DataHandler(object):
 
         return fileList
 
-    def _getCurrentRunId(self):
+    def getCurrentRunId(self):
         if (self.runId is None):
             timestamp = ''.join(str(dt.datetime.now().timestamp()).split('.'))
             self.runId = timestamp

@@ -170,7 +170,7 @@ class IRCurve(du.TimeSeriesData):
             levelParams.append(lr.coef_[0, 0])
         levelParams = np.average(1 - np.asarray(levelParams))
         # levelParams = np.average(1 - np.asarray(levelParams[0]))
-        print(str(end) + " Fit params: ", levelParams)
+        print(str(start) + "-" + str(end) + " Fit params: ", levelParams)
         return levelParams
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
@@ -318,10 +318,9 @@ class IRCurve(du.TimeSeriesData):
                     out = []
                     for j in range(len(predictive_model)):
                         out.append(predictive_model[j].predict(vol=None, ir=ir[:, j:j + 1])[0])
-                    params = np.abs(np.average(out)).reshape((-1, 1))
+                    params = np.average(out).reshape((-1, 1))
                 else:
-                    params = np.abs(predictive_model.predict(vol=None, ir=ir))
-
+                    params = predictive_model.predict(vol=None, ir=ir)
                 ir[:-1] = ir[1:]
 
             # self.setupModel(alpha=params[0])

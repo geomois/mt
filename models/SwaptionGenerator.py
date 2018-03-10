@@ -289,10 +289,6 @@ class SwaptionGen(du.TimeSeriesData):
         return avgError
 
     def __errors(self, part=None):
-        if (part is not None):
-            # part = [0, len(self.helpers)]
-            # TODO:map ir tenors to helpers' tenors
-            pass
         total_error = 0.0
         with_exception = 0
         errors = np.zeros((1, len(self.helpers)))
@@ -414,15 +410,15 @@ class SwaptionGen(du.TimeSeriesData):
     def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, part=None, skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
-        outcome = []
+        if dates is None:
+            dates = self._dates
+        outcome = np.zeros((len(dates), 3))
         outcomeStatic = []
         store.close()
         part = [0, len(self.helpers)] if part == -1 else part
         self.refdate = ql.Date(1, 1, 1901)
         vals = np.zeros((len(df.index), 4))
         values = np.zeros((len(df.index), 13))
-        if dates is None:
-            dates = self._dates
 
         method = ql.LevenbergMarquardt()
         end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
@@ -443,15 +439,11 @@ class SwaptionGen(du.TimeSeriesData):
                     self.set_date(ddate)
                     dataDict['vol'][i] = self.values
                     dataDict['ir'][i] = self._ircurve.values
-                    # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                    # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 continue
             if (i + 1 < dataLength):
                 self.set_date(ddate)
                 dataDict['vol'][i] = self.values
                 dataDict['ir'][i] = self._ircurve.values
-                # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 continue
             self.set_date(ddate)
             if (dataLength == 1):
@@ -459,33 +451,24 @@ class SwaptionGen(du.TimeSeriesData):
             else:
                 dataDict['vol'][-1] = self.values
                 dataDict['ir'][-1] = self._ircurve.values
-                # dataDict['vol'] = np.vstack((dataDict['vol'], self.values))
-                # dataDict['ir'] = np.vstack((dataDict['ir'], self._ircurve.values))
                 if (type(predictive_model) == list):
                     out = []
                     for j in range(len(predictive_model)):
                         out.append(predictive_model[j].predict(vol=dataDict['vol'], ir=dataDict['ir'][:, j:j + 1])[0])
-                    params = np.abs(np.average(out)).reshape((-1, 1))
-                    # params = np.average(out).reshape((-1, 1))
+                    params = np.average(out).reshape((-1, 1))
                 else:
-                    params = np.abs(predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir']))
+                    params = predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir'])
 
                 dataDict['vol'][:-1] = dataDict['vol'][1:]
                 dataDict['ir'][:-1] = dataDict['ir'][1:]
-                # dataDict['vol'] = np.delete(dataDict['vol'], (0), axis=0)
-                # dataDict['ir'] = np.delete(dataDict['ir'], (0), axis=0)
 
-            # self.setupModel(alpha=params[0])
             params = [[params[0, 0], 0]]  # shape (1,2)
-            # print(params)
-            # outcome.append(params)
-            # continue
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)
             paramsC = self.model.params()
             paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
-            outcome.append(paramsC)
+            outcome[i] = paramsC
 
             if (skip == -1):
                 params = [[alpha, 0]]  # shape (1,2)
@@ -499,7 +482,6 @@ class SwaptionGen(du.TimeSeriesData):
             else:
                 pass
                 print(i, paramsC, '\n')
-            # print('\n', i, paramsC, '\n')
             # try:
             #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
             # except RuntimeError:
@@ -508,10 +490,7 @@ class SwaptionGen(du.TimeSeriesData):
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
         print("end")
-        # pdb.set_trace()
-        outcome = np.asarray(outcome).reshape(-1, 2)
-        plt.plot(outcome[:, 0], label="")
-
+        # plt.plot(outcome[:, 0], label="")
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,

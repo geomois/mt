@@ -554,12 +554,16 @@ def prepareCalibration():
     return gh, channelRange
 
 
-def saveCalibrationResults(res):
+def saveCalibrationResults(res, name=""):
     ffolder = optionDict['checkpoint_dir'] + modelName + "/"
+    path = ffolder + name + ".npy"
+    dh = DataHandler()
     try:
-        np.save(ffolder + "mapped_sigmas.npy", res)
+        if (os.path.exists(path)):
+            path = ffolder + str(dh.getCurrentRunId()) + name + ".npy"
+        np.save(path, res)
     except:
-        np.save(optionDict['suffix'] + 'mapped_sigmas.npy', res)
+        np.save(optionDict['suffix'] + str(dh.getCurrentRunId()) + name + ".npy", res)
 
 
 def main(_):
@@ -639,13 +643,13 @@ def main(_):
             gh, channelRange = prepareCalibration()
             sigmas = swo.calibrate_sigma(gh, modelName, dataLength=optionDict['batch_width'],
                                          skip=optionDict['skip'], part=channelRange)
-            saveCalibrationResults(sigmas)
+            saveCalibrationResults(sigmas, OPTIONS.suffix + "sigmas")
         elif optionDict['calibrate_alpha']:
             ir = irc.getIRCurves(getIrModel(), optionDict['currency'], optionDict['irType'])
             gh, _ = prepareCalibration()
             alphas = ir.calibrate_alpha(gh, OPTIONS.suffix, dataLength=optionDict['batch_width'],
                                         skip=optionDict['skip'], plot=OPTIONS.plot)  # keep Options
-            saveCalibrationResults(alphas)
+            saveCalibrationResults(alphas, OPTIONS.suffix + "alphas")
         else:
             gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
@@ -839,6 +843,7 @@ if __name__ == '__main__':
             optionDict['irType'] = OPTIONS.irType
             optionDict['simulate'] = OPTIONS.simulate
             optionDict['exportInstFw'] = False
+            # optionDict['batch_width'] = OPTIONS.batch_width
 
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))

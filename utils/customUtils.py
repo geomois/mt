@@ -33,7 +33,7 @@ dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650,
               }
 index_Map_Libor_Eonia = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 21, 27, 28, 29, 30, 31, 32, 33, 34, 35]
 
-Dt = 0.0001
+Dt = 0.001
 
 
 def toDatetime(d):
@@ -94,43 +94,40 @@ def getImpliedForwardCurve(futureDate, curve):
 
 
 def transformDerivatives(derivative, channelStart, channelEnd, xShape):
-    dayCountDay = 0.0027
     derivative = np.asarray(derivative[0])
     step = channelEnd - channelStart
-    if (xShape[3] is not 1):
-        derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
+    if (len(xShape) > 2):
+        if (xShape[3] is not 1):
+            derivative = reshapeMultiple(derivative, 1, channelStart, channelEnd).reshape((-1, xShape[2]))
+        else:
+            derivative = derivative.reshape((-1, xShape[2]))
+        datapoints = int(derivative.shape[0] / step)
+        der = np.zeros((step, datapoints))
     else:
-        derivative = derivative.reshape((-1, xShape[2]))
-    datapoints = int(derivative.shape[0] / step)
-    der = np.zeros((step, datapoints))
+        derivative = derivative.reshape(-1, derivative.shape[0])
+        der = np.zeros(derivative.shape)
 
     depth = derivative.shape[1]
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
     times = np.asarray(dateInDays['libor'])
-    denom = 0.001 * derivative.shape[1]
+    depthScaler = Dt * derivative.shape[1]
     # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
             # integral = simps(-np.log(1 - derivative[j]) / dt, -lin) / denom  # 1st
-            integral = simps(-np.log(1 - derivative[j]) / dt, -lin) * denom  # 1st
             # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
             # integral = -np.log(1 - derivative[j][-1]) / denom  # last
             # integral = trapz(-np.log(1 - derivative[0])/dt, -lin) / denom # 2nd
-
+            if derivative[j].shape[0] == 1:
+                integral = (np.log(1 - derivative[j]) / dt) * depthScaler  # 1st
+            else:
+                integral = simps(np.log(1 - derivative[j]) / dt, -lin) * depthScaler  # 1st
+                # integral = simps(-np.log(np.abs(derivative[j])), -dt) / derivative.shape[1]  # abs
             temp.append(integral)
             der[i] = temp
     return der
-
-
-# integral = simps((1 - derivative[0]), -dt)
-# integral = simps(np.log((derivative[j] - 1) / -(1 - dt)), dd)
-# integral = simps(np.log((1 - derivative[35])), lin )
-# integral = np.abs(simps(np.log((1 - derivative[j])), -lin / 30))
-# integral = simps(np.log((derivative[j] - 1) / -(1 - dt)), dt)
-# integral = np.average(simps(dt-derivative[j],-dt)/30)
-# integral = simps(1 - derivative[j], -dt)
 
 def reshapeMultiple(array, depth, start, end):
     cc = []

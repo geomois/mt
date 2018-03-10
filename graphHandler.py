@@ -146,4 +146,5 @@ class GraphHandler(object):
     def predict(self, vol, ir, *args):
         self.setSession()
         result = self.model.predict(vol, ir, self.session, self.inputPlaceholder, args)
-        return result
+        return np.abs(result)
+        # return result
