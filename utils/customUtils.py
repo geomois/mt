@@ -111,20 +111,21 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
     times = np.asarray(dateInDays['libor'])
-    depthScaler = Dt * derivative.shape[1]
+    denom = derivative.shape[1]
+    depthScaler = Dt * denom
     # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
             # integral = simps(-np.log(1 - derivative[j]) / dt, -lin) / denom  # 1st
             # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
-            # integral = -np.log(1 - derivative[j][-1]) / denom  # last
-            # integral = trapz(-np.log(1 - derivative[0])/dt, -lin) / denom # 2nd
             if derivative[j].shape[0] == 1:
                 integral = (np.log(1 - derivative[j]) / dt) * depthScaler  # 1st
             else:
                 integral = simps(np.log(1 - derivative[j]) / dt, -lin) * depthScaler  # 1st
-                # integral = simps(-np.log(np.abs(derivative[j])), -dt) / derivative.shape[1]  # abs
+                # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
+                # integral = simps(np.log(1 - derivative[0]), -lin) / denom  # 2nd
+                # integral = -np.log(1 - derivative[j][-1]) / 0.0027  # last
             temp.append(integral)
             der[i] = temp
     return der

@@ -235,15 +235,19 @@ class NeuralNet(object):
             self.inputPipelineList = []
             self.inputPipeline = plist
 
-    def getCurrentPipeline(self, index=None):
+    def getCurrentPipeline(self, index=None, mapIndex=False):
         if (len(self.pipelineList) > 1 and index is not None):
+            if (mapIndex and len(self.pipelineList) > cu.index_Map_Libor_Eonia[-1]):
+                index = cu.index_Map_Libor_Eonia[index]
             self.pipeline = self.pipelineList[index]
         return self.pipeline
 
-    def getCurrentInputPipeline(self, index=None):
+    def getCurrentInputPipeline(self, index=None, mapIndex=False):
         if (index == None and self.inMultipleNetsIndex is not None):
             index = self.inMultipleNetsIndex
         if (len(self.inputPipelineList) > 1 and index is not None):
+            if (mapIndex and len(self.inputPipelineList) == cu.index_Map_Libor_Eonia[-1]):
+                index = cu.index_Map_Libor_Eonia[index]
             self.inputPipeline = self.inputPipelineList[index]
         return self.inputPipeline
 
@@ -277,13 +281,13 @@ class NeuralNet(object):
 
         return inPut
 
-    def applyPipeLine(self, tType, x, mode, useTf=False):
+    def applyPipeLine(self, tType, x, mode, useTf=False, mapIndex=False):
         if (mode == 'input'):
             modeFunc = self.getCurrentInputPipeline
         else:
             modeFunc = self.getCurrentPipeline
         for i in range(x.shape[1]):
-            pp = modeFunc(i)
+            pp = modeFunc(i, mapIndex)
             func = self._getTransformationFunction(tType, 'pre', pp)
             if func is not None:
                 if (useTf):
@@ -308,6 +312,10 @@ class NeuralNet(object):
         return out
 
     def predict(self, vol, ir, sess, x_pl, *args):
+        mapIndex = False
+        if (ir.shape[1] != self.irChannels):
+            ir = ir[:, cu.index_Map_Libor_Eonia]
+            mapIndex = True
         chained_pl = chainedOutput = None
         if (self.chainedModel is not None):
             chainedOutput = self.chainedModel['model'].predict(vol, ir)
@@ -323,7 +331,7 @@ class NeuralNet(object):
             else:
                 x = np.vstack((x, np.float32(ir[:, :self.irChannels])))
         if (len(self.inputPipelineList) > 0 or self.inputPipeline is not None):
-            x = self.applyPipeLine('transform', x, 'input', useTf=False)
+            x = self.applyPipeLine('transform', x, 'input', useTf=False, mapIndex=mapIndex)
         if (len(x_pl.get_shape()) == 3):
             x = x.reshape((1, x.shape[0], x.shape[1]))
         elif (len(x_pl.get_shape()) == 4):
@@ -346,7 +354,7 @@ class NeuralNet(object):
                     # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
                     out = self.pipeline.inverse_transform(np.asarray(out))
                 else:
-                    out = self.applyPipeLine('inverse', out, 'output', useTf=False)
+                    out = self.applyPipeLine('inverse', out, 'output', useTf=False, mapIndex=mapIndex)
 
             if (chainedOutput is not None):
                 out = np.append(chainedOutput, out)

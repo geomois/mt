@@ -145,7 +145,7 @@ class IRCurve(du.TimeSeriesData):
         for i in range(irPre.shape[0]):
             # lr.fit(irPre[i, :50].reshape(-1, 1), irAft[i, :50].reshape(-1, 1))
             # levelParams.append([lr.coef_[0, 0], lr.intercept_[0]])
-            ls = sm.OLS(irPre[i, :50].reshape(-1, 1), irAft[i, :50].reshape(-1, 1))
+            ls = sm.OLS(irAft[i, :50].reshape(-1, 1), irPre[i, :50].reshape(-1, 1))
             res = ls.fit()
             levelParams.append([res.params[0], res.bse[0]])
             # pdb.set_trace()
@@ -155,7 +155,7 @@ class IRCurve(du.TimeSeriesData):
         pdb.set_trace()
         return levelParams[:, 0], levelParams[:, 1]
 
-    def calibrateStaticAlpha(self, start, end, diff=80):
+    def calibrateStaticAlpha(self, start, end, diff=80, short=False):
         lr = LinearRegression()
         if (self.curveArray is None):
             self.curveArray = np.asarray(self.getAll())
@@ -165,13 +165,19 @@ class IRCurve(du.TimeSeriesData):
             end = irAft.shape[1]
             start = irAft.shape[1] - diff
         levelParams = []
-        for i in range(irPre.shape[0]):
-            lr.fit(irPre[i, start:end].reshape(-1, 1), irAft[i, start:end].reshape(-1, 1))
-            levelParams.append(lr.coef_[0, 0])
-        levelParams = np.average(1 - np.asarray(levelParams))
-        # levelParams = np.average(1 - np.asarray(levelParams[0]))
+        sigma = []
+        maturities = irPre.shape[0]
+        if (short):
+            maturities = 1  # use first maturity only
+        for i in range(maturities):
+            # lr.fit(irPre[i, start:end].reshape(-1, 1), irAft[i, start:end].reshape(-1, 1))
+            # levelParams.append(lr.coef_[0, 0])
+            # sigma.append(lr.intercept_[0])
+            levelParams.append(np.corrcoef(irPre[i, start:end], irAft[i, start:end])[0, 1])
+        levelParams = np.average(1 - np.asarray(levelParams), axis=0)
+
         print(str(start) + "-" + str(end) + " Fit params: ", levelParams)
-        return levelParams
+        return levelParams, np.asarray(sigma)
 
     # paper http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/b92869fc0331450dc1256dc500576be4/$FILE/SEPP%20numerical%20implementation%20Hull&White.pdf
     def calcThetaHW(self, path=None, prime=False, skip=30):
