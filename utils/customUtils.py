@@ -122,7 +122,8 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
             if derivative[j].shape[0] == 1:
                 integral = (np.log(1 - derivative[j]) / dt) * depthScaler  # 1st
             else:
-                integral = simps(np.log(1 - derivative[j]) / dt, -lin * 0.01)  # 1st
+                integral = simps(np.log(1 - derivative[j]) / dt, -lin * depthScaler)  # 1st cnn
+                # integral = simps(np.log(1 - derivative[j]) / dt, -lin * 0.01)  # 1st lstm
                 # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
                 # integral = simps(np.log(1 - derivative[0]), -lin) / denom  # 2nd
                 # integral = -np.log(1 - derivative[j][-1]) / 0.0027  # last
