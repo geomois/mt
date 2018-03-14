@@ -327,6 +327,8 @@ def correlations(xDFrame, yDFrame, xGroup=['Term'], yGroup=['OptionTerm', 'SwapT
     # df[~df.someColumn.isin(someList)] #keep data that are NOT in somelist
 
 # #Plot errors
+# import seaborn as sns; sns.set()
+# sns.set_color_codes()
 # import numpy as np
 # import matplotlib.pyplot as plt
 # import pandas as pd

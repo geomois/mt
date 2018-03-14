@@ -6,7 +6,7 @@ import pdb, re
 
 
 class NeuralNet(object):
-    def __init__(self, volChannels, irChannels, kernels=[10, 10], depths=[10, 1], poolStrides=[2], units=[2],
+    def __init__(self, volChannels, irChannels, kernels=['10', '10'], depths=[10, 1], poolStrides=[2], units=[2],
                  poolingLayerFlag=False, architecture=['c', 'f', 'd'],
                  activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],
                  weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
@@ -16,6 +16,7 @@ class NeuralNet(object):
         self.regularizationStrength = regularizationStrength
         self.units = deque([int(i) for i in units])
         self.poolStrides = deque(poolStrides)
+        kernels = [int(i) for i in kernels]
         self.kernels = deque(kernels)
         self.depths = deque(depths)
         self.poolingFlag = poolingLayerFlag

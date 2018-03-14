@@ -26,6 +26,7 @@ LSTM_UNITS_DEFAULT = '44'
 BATCH_WIDTH_DEFAULT = 30
 CONVOLUTION_VOL_DEPTH_DEFAULT = 156
 CONVOLUTION_IR_DEPTH_DEFAULT = 44
+KERNEL_SIZE_DEFAULT = ['10']
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
@@ -125,7 +126,7 @@ def buildNN(dataHandler, swaptionGen=None, chainedModel=None):
         pass
 
     nn = NeuralNet(volChannels=optionDict['conv_vol_depth'], irChannels=optionDict['conv_ir_depth'],
-                   poolingLayerFlag=poolingFlag, inPipeline=inPP, pipeline=outPP,
+                   kernels=optionDict["kernels"], poolingLayerFlag=poolingFlag, inPipeline=inPP, pipeline=outPP,
                    architecture=optionDict['architecture'], units=optionDict['nodes'],
                    activationFunctions=activation, chainedModel=chainedModel,
                    calibrationFunc=swaptionGen.calibrate if swaptionGen is not None else None)
@@ -717,6 +718,7 @@ if __name__ == '__main__':
                         help='Comma separated list of number of dense layer depth')
     parser.add_argument('-ar', '--architecture', nargs='+', default=DEFAULT_ARCHITECTURE,
                         help='Comma separated list of characters c->convLayer, l->lstm, f->flatten, d->dense')
+    parser.add_argument('--kernels', nargs='+', default=KERNEL_SIZE_DEFAULT, help='Kernel size')
     parser.add_argument('-lr', '--learning_rate', type=float, default=LEARNING_RATE_DEFAULT,
                         help='Learning rate')
     parser.add_argument('-ms', '--max_steps', type=int, default=MAX_STEPS_DEFAULT,
@@ -843,6 +845,8 @@ if __name__ == '__main__':
             optionDict['irType'] = OPTIONS.irType
             optionDict['simulate'] = OPTIONS.simulate
             optionDict['exportInstFw'] = False
+            pdb.set_trace()
+            optionDict['kernels'] = OPTIONS.kernels
             # optionDict['batch_width'] = OPTIONS.batch_width
 
         except Exception as ex:
