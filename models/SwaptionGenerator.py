@@ -375,11 +375,6 @@ class SwaptionGen(du.TimeSeriesData):
 
             hist_evals = self.model.functionEvaluation() if with_evals else -1
             hist_params = np.array([v for v in self.model.params()])
-
-            # Return tuple (date, orig_evals, optim_evals, hist_evals,
-            # orig_objective, orig_mean_error, hist_objective, hist_mean_error,
-            # hist_objective_prior, hist_mean_error_prior,
-            # original params, hist parameters, errors)
             return (ddate, orig_evals, optim_evals, orig_objective, orig_mean_error,
                     hist_evals, hist_objective, hist_mean_error, hist_objective_prior,
                     hist_mean_error_prior, orig_params, hist_params, errors)
@@ -407,6 +402,39 @@ class SwaptionGen(du.TimeSeriesData):
         _, errors = self.__errors()
         return (orig_errors, errors)
 
+    def calibrate_Lr_sigma(self, modelName, skip=0):
+        store = pd.HDFStore(du.h5file)
+        df = store[self.key_model]
+        dates = self._dates
+        outcome = np.zeros((len(dates), 3))
+        store.close()
+        part = [0, len(self.helpers)]
+        self.refdate = ql.Date(1, 1, 1901)
+        vals = np.zeros((len(df.index), 4))
+        values = np.zeros((len(df.index), 13))
+
+        method = ql.LevenbergMarquardt()
+        end_criteria = ql.EndCriteria(250, 200, 1e-7, 1e-7, 1e-7)
+        lower = ql.Array(5, 1e-9)
+        upper = ql.Array(5, 1.0)
+        lower[4] = -1.0
+        constraint = ql.PositiveConstraint()
+        self.set_date(dates[0])
+
+        for i in range(skip, len(dates), 1):
+            self.set_date(dates[i])
+            alpha, _ = self._ircurve.calibrateStaticAlpha(i - skip, i, skip)
+            params = [[alpha, 0]]
+            self.model.setParams(ql.Array(params[0]))
+            pdb.set_trace()
+            self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
+            meanErrorAfter, _ = self.__errors(part=part)
+            paramsC = self.model.params()
+            paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
+            outcome[i] = paramsC
+
+        return outcome
+
     def calibrate_sigma(self, predictive_model, modelName, dates=None, dataLength=1, part=None, skip=0):
         store = pd.HDFStore(du.h5file)
         df = store[self.key_model]
@@ -425,72 +453,30 @@ class SwaptionGen(du.TimeSeriesData):
         lower = ql.Array(5, 1e-9)
         upper = ql.Array(5, 1.0)
         lower[4] = -1.0
-        # constraint = ql.NonhomogeneousBoundaryConstraint(lower, upper)
+
         constraint = ql.PositiveConstraint()
         self.set_date(dates[0])
-        dataDict = {'vol': np.zeros((dataLength, self.values.shape[0])),
-                    'ir': np.zeros((dataLength, self._ircurve.values.shape[0]))}
+        alphas = self._ircurve.calibrate_alpha(predictive_model, modelName, dates=dates, dataLength=dataLength,
+                                               skip=skip)
+        print('Calibrating volatility on historic data...')
         for i, ddate in enumerate(dates):
-            if (skip == -1):
-                if (i % 80 == 0):
-                    alpha = self._ircurve.calibrateStaticAlpha(i, i + 80)
-            if (i < skip):
-                if (i + dataLength - 1 >= skip):
-                    self.set_date(ddate)
-                    dataDict['vol'][i] = self.values
-                    dataDict['ir'][i] = self._ircurve.values
-                continue
             if (i + 1 < dataLength):
-                self.set_date(ddate)
-                dataDict['vol'][i] = self.values
-                dataDict['ir'][i] = self._ircurve.values
                 continue
             self.set_date(ddate)
-            if (dataLength == 1):
-                params = predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir'])
-            else:
-                dataDict['vol'][-1] = self.values
-                dataDict['ir'][-1] = self._ircurve.values
-                if (type(predictive_model) == list):
-                    out = []
-                    for j in range(len(predictive_model)):
-                        out.append(predictive_model[j].predict(vol=dataDict['vol'], ir=dataDict['ir'][:, j:j + 1])[0])
-                    params = np.average(out).reshape((-1, 1))
-                else:
-                    params = predictive_model.predict(vol=dataDict['vol'], ir=dataDict['ir'])
-
-                dataDict['vol'][:-1] = dataDict['vol'][1:]
-                dataDict['ir'][:-1] = dataDict['ir'][1:]
-
-            params = [[params[0, 0], 0]]  # shape (1,2)
+            params = [[alphas[i], 0]]  # shape (1,2)
             self.model.setParams(ql.Array(params[0]))
             self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])  # keep alpha as is
             meanErrorAfter, _ = self.__errors(part=part)
             paramsC = self.model.params()
             paramsC = np.append(np.asarray(paramsC), meanErrorAfter)
             outcome[i] = paramsC
-
-            if (skip == -1):
-                params = [[alpha, 0]]  # shape (1,2)
-                self.model.setParams(ql.Array(params[0]))
-                self.model.calibrate(self.helpers, method, end_criteria, constraint, [], [True, False])
-                meanErrorAfterStatic, _ = self.__errors(part=part)
-                paramsCStatic = self.model.params()
-                paramsCStatic = np.append(np.asarray(paramsCStatic), meanErrorAfterStatic)
-                outcomeStatic.append(paramsCStatic)
-                # print(i, ' Pred model: ', paramsC, "Static: ", paramsCStatic, '\n')
-            else:
-                pass
-                print(i, paramsC, '\n')
+            print(i, paramsC, '\n')
             # try:
             #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
             # except RuntimeError:
             #     objectiveAfter = np.nan
 
-        if (len(outcomeStatic) > 1):
-            np.save("sigmaStatic30.npy", outcomeStatic)
-        print("end")
-        # plt.plot(outcome[:, 0], label="")
+        print("Finished calibrating volatility")
         return outcome
 
     def compare_history(self, predictive_model, modelName, dates=None, plot_results=True, dataLength=1, skip=0,
@@ -513,7 +499,6 @@ class SwaptionGen(du.TimeSeriesData):
         constraint = ql.PositiveConstraint()
         self.set_date(dates[0])
         dataDict = {'vol': np.empty((0, self.values.shape[0])), 'ir': np.empty((0, self._ircurve.values.shape[0]))}
-        # pdb.set_trace()
         paramsList = np.empty((0, 3))
         for i, ddate in enumerate(dates):
             if (i < skip):
@@ -633,8 +618,6 @@ class SwaptionGen(du.TimeSeriesData):
 
 def get_swaptiongen(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNode=du.h5_ts_node,
                     volFileName=None, irFileName=None):
-    # ,'GBP','EUR','USD','CNY'
-    # ,'libor','euribor','shibor','ois'
     index = None
     if (str(currency).lower() == 'gbp'):
         if (str(irType).lower() == 'libor'):

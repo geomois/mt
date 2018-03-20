@@ -76,6 +76,8 @@ class NeuralNet(object):
                                                          depth=depthSize, sep=separable,
                                                          activationFunc=self._getFunction('act', 'c'),
                                                          initializer=self._getFunction('init', 'c')())
+                        maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
+                        layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     convcount += 1
                 elif ('l' in l.lower() or "lstm" in l.lower() or 'g' in l.lower() or "gru" in l.lower()):
@@ -94,7 +96,6 @@ class NeuralNet(object):
                                                      initializer=self._getFunction('init', 'l')())
                 elif (l.lower() == 'f' or l.lower() == "flatten"):
                     with tf.variable_scope("flatten" + str(flatcount)):
-                        # layer = tf.contrib.layers.flatten(layer)
                         inShape = layer.get_shape().as_list()
                         if (len(inShape) == 4):
                             layer = tf.reshape(layer, [-1, inShape[1] * inShape[2] * inShape[3]])
@@ -113,30 +114,10 @@ class NeuralNet(object):
                                                  initializer=self._getFunction('init', 'd')())
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     densecount += 1
-                elif (l.lower() == 'cus' or l.lower() == "customDense"):
-                    with tf.variable_scope('customDense'):
-                        weights = tf.get_variable("w", [layer.get_shape()[1], units],
-                                                  regularizer=self._getFunction('reg', 'd')(
-                                                      self.regularizationStrength),
-                                                  initializer=self._getFunction('init', 'd')())
-                        bias = tf.get_variable("b", [1], initializer=tf.constant_initializer(0.1))
-                        layer = tf.add(tf.matmul(x, weights), bias)
-                        self._variable_summaries(bias, tf.get_variable_scope().name + '/bias')
-                        self._variable_summaries(weights, tf.get_variable_scope().name + '/weights')
-                        return layer
-                        tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
         return layer
 
     def _depthWiseConvLayer(self, x, kernelSize, depth, nbChannels=1, sep=False, activationFunc=tf.nn.relu,
                             initializer=tf.contrib.layers.xavier_initializer()):
-        '''
-        x : input
-        kernelSize : int or tuple of kernel dimensions
-        depth : number of signal to be convolved
-        nbChannels : number of signal channels
-        activationFunc : activation
-        initializer : weight initializer function
-        '''
         if (sep):
             kernel = tf.get_variable("w", [1, kernelSize, nbChannels, depth], initializer=initializer)
             bias = tf.get_variable("b", kernelSize, initializer=tf.constant_initializer(0))
@@ -186,11 +167,6 @@ class NeuralNet(object):
         return layer
 
     def _getFunction(self, functionType, layerType='c'):
-        '''
-        :param functionType: act -> activation, init -> initializer, reg -> regularizer
-        :param layerType: c-> conv, d -> dense
-        :return: activationFunction
-        '''
         assert (functionType in self.functionDict), "Not a valid function type (init, reg, act)"
         functionList = self.functionDict[functionType]
         if (type(functionList) == dict):  # dictionary defining functions of different layer types
@@ -279,7 +255,6 @@ class NeuralNet(object):
                 inPut = func(inPut)
         else:
             pass
-
         return inPut
 
     def applyPipeLine(self, tType, x, mode, useTf=False, mapIndex=False):
@@ -343,7 +318,6 @@ class NeuralNet(object):
             out = sess.run(self.outOp, feed_dict={x_pl: x})
 
         if (self.derive):
-            # patching for lstm
             if (len(out[0].shape) == 3):
                 out[0] = out[0].reshape((1, 1, out[0].shape[1], out[0].shape[2]))
                 x = x.reshape((1, 1, x.shape[1], x.shape[2]))
@@ -352,7 +326,6 @@ class NeuralNet(object):
             if (len(self.pipelineList) > 0 or self.pipeline is not None):
                 pdb.set_trace()
                 if (len(self.pipelineList) == 0):
-                    # out = self.pipeline.inverse_transform(np.asarray(out).reshape((1, 2)))
                     out = self.pipeline.inverse_transform(np.asarray(out))
                 else:
                     out = self.applyPipeLine('inverse', out, 'output', useTf=False, mapIndex=mapIndex)

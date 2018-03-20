@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.externals import joblib
 import re, pickle, os, pdb
 from utils.FunctionTransformer import FunctionTransformerWithInverse
-from scipy.integrate import simps, trapz
+from scipy.integrate import simps
 
 optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency", "gpu_memory_fraction", "suffix",
               "decay_steps", "weight_reg_strength", "irFileName", "model_dir", "historyStart", "test_frequency",
@@ -21,7 +21,6 @@ optionList = ["dropout_rate", "architecture", "use_calibration_loss", "currency"
               "optimizer", "is_train", "pipeline", "calculate_gradient", "no_transform", "decay_rate",
               "saveProcessedData", "calibrate_sigma", "irType", "calibrate", "weight_init", "decay_staircase",
               "outDims", "input_dims", "output_dims"]
-
 dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 5475, 7300, 9125],
               "libor": [0, 1, 2, 7, 14, 30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 395, 425, 456,
                         486, 516, 547, 577, 607, 638, 668, 698, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285,
@@ -32,7 +31,6 @@ dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650,
                         2190, 2555, 2920, 3285, 3650]
               }
 index_Map_Libor_Eonia = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 21, 27, 28, 29, 30, 31, 32, 33, 34, 35]
-
 Dt = 0.001
 
 
@@ -79,11 +77,6 @@ def createCurve(refDate, tenors, rates, irType='libor'):
 
 
 def getImpliedForwardCurve(futureDate, curve):
-    '''
-    :param futureDate: future evaluation date
-    :param curve: a QuantLib curve
-    :return:
-    '''
     refDate = curve.nodes()[0][0]
     ql.Settings.instance().evaluationDate = refDate
     dates, rates = zip(*curve.nodes())
@@ -110,23 +103,17 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
     depth = derivative.shape[1]
     lin = np.linspace(1, derivative.shape[1], num=derivative.shape[1])[::-1]
     dt = np.linspace(0.0027, derivative.shape[1] * 0.0027, num=derivative.shape[1])[::-1]
-    times = np.asarray(dateInDays['libor'])
     denom = derivative.shape[1]
-    depthScaler = Dt * denom
-    # pdb.set_trace()
     for i in range(step):
         temp = []
         for j in range(i, derivative.shape[0], step):
-            # integral = simps(-np.log(1 - derivative[j]) / dt, -lin) / denom  # 1st
-            # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
             if derivative[j].shape[0] == 1:
-                integral = (np.log(1 - derivative[j]) / dt) * depthScaler  # 1st
+                integral = simps(np.log(1 + derivative[j]), lin)  # 1st
             else:
-                integral = simps(np.log(1 - derivative[j]) / dt, -lin * depthScaler)  # 1st cnn
-                # integral = simps(np.log(1 - derivative[j]) / dt, -lin * 0.01)  # 1st lstm
-                # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # abs
-                # integral = simps(np.log(1 - derivative[0]), -lin) / denom  # 2nd
-                # integral = -np.log(1 - derivative[j][-1]) / 0.0027  # last
+                integral = simps(-np.log(1 + derivative[j]), lin)  # 1st
+                # integral = simps(np.log(1 - derivative[0])) / denom  # 2nd
+                # integral = simps(-np.log(np.abs(derivative[j])), -dt) / denom  # 3rd
+
             temp.append(integral)
             der[i] = temp
     return der
@@ -141,7 +128,6 @@ def reshapeMultiple(array, depth, start, end):
             temp = array[i, :, :, j:colEnd].reshape((1, 1, array.shape[2], depth))
             cc.append((i * array.shape[3]) + j)
             o[(i * array.shape[3]) + j] = temp
-    # return np.abs(o)
     return o
 
 

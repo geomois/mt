@@ -37,7 +37,6 @@ class GraphHandler(object):
             y_pl = graph.get_tensor_by_name("y_pl:0")
             if (self.prefix != ""):
                 self.chainedPlaceholder = graph.get_tensor_by_name(self.prefix + "x_pl:0")
-            # self.session.run(tf.global_variables_initializer())
             if (fileName is None):
                 try:
                     self.saver.restore(self.session, check.model_checkpoint_path)
@@ -56,14 +55,14 @@ class GraphHandler(object):
             self.session.run(tf.global_variables_initializer())
             if (gradientFlag):
                 self.gradientOp = tf.gradients(self.predictOperation, self.inputPlaceholder)
-                # self.gradientOp = tf.gradients(loss, [self.inputPlaceholder, self.outputPlaceholder])
 
     def buildModel(self, optionDict, chained=None, outPipeline=None, inPipeline=None, inMultipleNetsIndex=None):
         with self.graph.as_default():
             self.chainedDict = chained
             self.model = self.modelType(volChannels=optionDict['conv_vol_depth'],
-                                        irChannels=optionDict['conv_ir_depth'],
+                                        irChannels=optionDict['conv_ir_depth'], kernels=optionDict["kernels"],
                                         pipeline=outPipeline, inPipeline=inPipeline,
+                                        architecture=optionDict['architecture'], units=optionDict['nodes'],
                                         inMultipleNetsIndex=inMultipleNetsIndex)
             self.loss = self.model.loss(self.predictOperation, self.outputPlaceholder)
             self._delegateModelParams()
@@ -75,6 +74,20 @@ class GraphHandler(object):
         self.model.outOp = op
         self.model.derive = True if self.gradientOp is not None else False
         self.model.setChainedDict(self.chainedDict)
+
+    def derivativeScaling(self, der, currency):
+        historyWidth = self.inputPlaceholder.shape[2].value
+        kernelSize = self.model.kernels[0]
+        nnType = 'cnn' if self.model.architecture[0].lower() == "c" else 'lstm' if 'l' in self.model.architecture[
+            0].lower() else 'dense'
+        scaler = 1 - (kernelSize / historyWidth)
+
+        if (currency.lower() == 'gbp'):
+            if (nnType == 'cnn'):
+                der -= der.min()
+                der = scaler * der
+
+        return np.abs(der)  # to make sure for positive values
 
     def run(self, data, op=None):
         self.setSession()
@@ -92,6 +105,7 @@ class GraphHandler(object):
             out = self.session.run(op, feed_dict={self.inputPlaceholder: inPut, self.chainedPlaceholder: chainedInPut})
         else:
             if (len(op) > 1):
+                outPut = None
                 if (type(data) == tuple):
                     inPut = data[0]
                     outPut = data[1]
@@ -146,5 +160,4 @@ class GraphHandler(object):
     def predict(self, vol, ir, *args):
         self.setSession()
         result = self.model.predict(vol, ir, self.session, self.inputPlaceholder, args)
-        return np.abs(result)
-        # return result
+        return result

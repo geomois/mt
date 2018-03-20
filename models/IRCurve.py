@@ -6,16 +6,10 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
 seed = 1027
-# Interest Rate Curve hdf5 node
 h5_irc_node = 'IRC'
 
 
 class IRCurve(du.TimeSeriesData):
-    '''Class for accessing IR curve data and instantianting QuantLib instances
-    The curves are instantiated as interpolated zero curves using the monotonic
-    cubic interpolation.
-    '''
-
     def __init__(self, ccy, tenor, parentNode=du.h5_ts_node, data=None):
         if tenor in string.digits:
             tenor = '_' + tenor
@@ -43,7 +37,6 @@ class IRCurve(du.TimeSeriesData):
         if self._pipeline is None:
             self.pca()
         refdate = ql.Date(date.day, date.month, date.year)
-        # data = self._pipeline.inverse_transform(vals)[0] OLD
         data = self._pipeline.inverse_transform(vals)[:]
         return (data, self.__curveimpl(refdate, data))
 
@@ -112,21 +105,6 @@ class IRCurve(du.TimeSeriesData):
             else:
                 integral = np.exp(-simps(cSum, sampleX))
             expSums[i] = integral
-            # summing
-            # if levels[i] >= 365:
-            #     num = 4 * (levels[i] / 365)
-            #     samples = np.linspace(0, levels[i], num)
-            #     # samples = np.append(np.arange(0, 4 * (levels[i] / 365)), levels[i] / 365)
-            #     sampleDates = [t0 + ql.Period(int(num), ql.Days) + delta for num in samples]
-            # else:
-            #     sampleDates = [t0 + ql.Period(int(levels[i]), ql.Days) + delta]
-            # for ddate in sampleDates:
-            #     if (ddate > x.maxDate()):
-            #         pdb.set_trace()
-            #         ddate = x.maxDate()
-            #     cSum += x.zeroRate(ddate, x.dayCounter(), ql.Continuous).rate()
-            # cSum = np.exp(-cSum)
-            # expSums[i] = cSum
         return expSums, np.exp(-zDelta)
 
     def getHWForwardRate(self, ddate, T, deltaT):
@@ -231,14 +209,6 @@ class IRCurve(du.TimeSeriesData):
                 currentInstFw = currentInstFw.append(nextFrame)
             except:
                 pass
-            # try:
-            #     nextDate = self._dates[i + 1]
-            #     nextCurve = self.__getitem__(nextDate)
-            #     fwDt = self.curveToArray(levels, nextCurve, instant=True)
-            #     nextFrame = self._getSubOfNext(levels, nextDate, nextDate, fwDt, nextInstFw.columns.tolist())
-            #     nextInstFw = nextInstFw.append(nextFrame)
-            # except:
-            #     pass
         if (path is not None):
             currentInstFw.to_csv(path, index=False)
 
@@ -252,10 +222,6 @@ class IRCurve(du.TimeSeriesData):
         return deltaFrame
 
     def _getTheta(self, levels, curve, alpha=0.01):
-        # deltaT = 1  # 0.00277778  # 1 Day
-        # fw = self.curveToArray(levels, curve)
-        # fwPlus = self.curveToArray(levels, curve, delta=deltaT)
-        # dtFw = (fwPlus - fw) / (deltaT / 365)
         fw = self.curveToArray(levels, curve)
         dtFw = self._getPrime(levels, curve)
         theta = dtFw + alpha * fw
@@ -329,37 +295,18 @@ class IRCurve(du.TimeSeriesData):
                     params = predictive_model.predict(vol=None, ir=ir)
                 ir[:-1] = ir[1:]
 
-            # self.setupModel(alpha=params[0])
             params = [params[0, 0]]
-            # print(params)
             outcome.append(params)
-            continue
-            self.model.setParams(ql.Array(params[0]))
-
-            if (skip == -1):
-                params = [[alpha, 0]]  # shape (1,2)
-                self.model.setParams(ql.Array(params[0]))
-                paramsCStatic = params[0]
-                paramsCStatic = np.append(np.asarray(paramsCStatic))
-                outcomeStatic.append(paramsCStatic)
-                # print(i, ' Pred model: ', paramsC, "Static: ", paramsCStatic, '\n')
-            else:
-                pass
-                # print(i, paramsC, '\n')
-            # print('\n', i, paramsC, '\n')
-            # try:
-            #     objectiveAfter = self.model.value(self.model.params(), self.helpers)
-            # except RuntimeError:
-            #     objectiveAfter = np.nan
 
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
         outcome = np.asarray(outcome).reshape(-1)
+        outcome = predictive_model.derivativeScaling(outcome, self.ccy)
         outcome = np.append(np.zeros(dataLength - 1), outcome)
         if (plot):
             plt.plot(outcome, label=modelName)
 
-        print("end")
+        print("Finished calibrating mean reversion")
         return outcome
 
 

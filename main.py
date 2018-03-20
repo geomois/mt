@@ -1,4 +1,4 @@
-import argparse, os, time, sys, pdb, simulate
+import argparse, os, time, sys, simulate, pdb
 import tensorflow as tf
 from graphHandler import GraphHandler
 from models.neuralNet import NeuralNet
@@ -13,7 +13,7 @@ from sklearn.externals import joblib
 import utils.customUtils as cu
 from utils.FunctionTransformer import FunctionTransformerWithInverse
 
-# region NNDefaultConstants
+# region NNDefaults
 LEARNING_RATE_DEFAULT = 2e-3
 WEIGHT_REGULARIZER_STRENGTH_DEFAULT = 0.001
 WEIGHT_INITIALIZATION_SCALE_DEFAULT = 1e-4
@@ -26,7 +26,7 @@ LSTM_UNITS_DEFAULT = '44'
 BATCH_WIDTH_DEFAULT = 30
 CONVOLUTION_VOL_DEPTH_DEFAULT = 156
 CONVOLUTION_IR_DEPTH_DEFAULT = 44
-KERNEL_SIZE_DEFAULT = ['10']
+KERNEL_SIZE_DEFAULT = ['10', '10']
 WEIGHT_INITIALIZATION_DEFAULT = 'normal'
 WEIGHT_REGULARIZER_DEFAULT = 'l2'
 ACTIVATION_DEFAULT = 'relu'
@@ -34,7 +34,7 @@ OPTIMIZER_DEFAULT = 'sgd'
 NUMBER_OF_NODES = ['2']
 DEFAULT_ARCHITECTURE = ['c', 'f', 'd']
 GPU_MEMORY_FRACTION = 0.3
-# endregion NNDefaultConstants
+# endregion NNDefaults
 
 # region QLDefaultConstants
 CURRENCY_DEFAULT = 'EUR'
@@ -107,6 +107,7 @@ def buildNN(dataHandler, swaptionGen=None, chainedModel=None):
         print("Aligning...")
         optionDict['nodes'][len(optionDict['nodes']) - 1] = testY.shape[1]
     print("Output dims" + str((None, testY.shape[1])))
+    xShape = None
     if len(testX.shape) == 2:
         xShape = (None, testX.shape[1])
     elif (len(testX.shape) == 3):
@@ -230,12 +231,12 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
                         if (inputPipeline is not None):
                             print("Transforming testX")
                             if (len(testX.shape) == 3):
-                                for i in range(np.asarray(testX).shape[2]):
-                                    testX[:, :, i] = inputPipeline.transform(testX[:, :, i])
+                                for j in range(np.asarray(testX).shape[2]):
+                                    testX[:, :, j] = inputPipeline.transform(testX[:, :, j])
 
                             elif (len(testX.shape) == 4):
-                                for i in range(np.asarray(testX).shape[3]):
-                                    testX[:, 0, :, i] = inputPipeline.transform(testX[:, 0, :, i])
+                                for j in range(np.asarray(testX).shape[3]):
+                                    testX[:, 0, :, j] = inputPipeline.transform(testX[:, 0, :, j])
                     # pdb.set_trace()
                     if (chainedModel is not None):
                         chained_test_x, _ = chainedDH.getTestData()
@@ -264,14 +265,15 @@ def trainNN(dataHandler, network, loss, pred, x_pl, y_pl, testX, testY, chainedM
             if (gradient is not None):
                 derivative = sess.run(gradient, feed_dict={x_pl: testX})
                 der = sess.run(gradient, feed_dict={x_pl: np.vstack((dataHandler.trainData['input'], testX))})
-                folder = optionDict['checkpoint_dir'] + modelName
-                np.save(folder + "/" + "fullRawDerivatives.npy", der)
+                ffolder = optionDict['checkpoint_dir'] + modelName
+                np.save(ffolder + "/" + "fullRawDerivatives.npy", der)
         #                transformDerivatives(derivative, dataHandler, testX, folder=checkpointFolder)
 
         optionDict['input_pipeline'] = savePipeline(inputPipeline, 'in')
         optionDict['pipeline'] = savePipeline(outPipeline, 'out')
         opts = get_options(False, modelDir=checkpointFolder + str(optionDict['max_steps']))
 
+        xShape = None
         if len(testX.shape) == 2:
             xShape = (None, testX.shape[1])
         elif (len(testX.shape) == 3):
@@ -309,12 +311,12 @@ def setupChainedModel(chainedModelDict, useDataHandler=False):
     return dh, chainedModelDict
 
 
-def transformDerivatives(derivative, dataHandler, testX, folder=None, save=True):
+def transformDerivatives(derivative, dataHandler, testX, ffolder=None, save=True):
     der = cu.transformDerivatives(derivative, dataHandler.channelStart, dataHandler.channelEnd, testX.shape)
     if (save):
-        if (folder is None):
-            folder = optionDict['checkpoint_dir'] + modelName
-        np.save(folder + "/" + "testDerivatives.npy", der)
+        if (ffolder is None):
+            ffolder = optionDict['checkpoint_dir'] + modelName
+        np.save(ffolder + "/" + "testDerivatives.npy", der)
 
     return der
 
@@ -462,13 +464,6 @@ def getTfConfig():
 
 
 def setupNetwork(options, chainedDict=None, gradientFlag=False, prefix="", inMultipleNetsIndex=None):
-    """
-    :param options:
-    :param chainedDict
-    :param gradientFlag:
-    :param prefix:
-    :return: GraphHandler
-    """
     if (type(options) == argparse.Namespace):
         options = vars(options)
     fName, directory = cu.splitFileName(options['model_dir'])
@@ -560,9 +555,12 @@ def saveCalibrationResults(res, name=""):
     path = ffolder + name + ".npy"
     dh = DataHandler()
     try:
-        if (os.path.exists(path)):
-            path = ffolder + str(dh.getCurrentRunId()) + name + ".npy"
-        np.save(path, res)
+        if (OPTIONS.force_save):
+            np.save(optionDict['suffix'] + str(dh.getCurrentRunId()) + name + ".npy", res)
+        else:
+            if (os.path.exists(path)):
+                path = ffolder + str(dh.getCurrentRunId()) + name + ".npy"
+            np.save(path, res)
     except:
         np.save(optionDict['suffix'] + str(dh.getCurrentRunId()) + name + ".npy", res)
 
@@ -651,6 +649,10 @@ def main(_):
             alphas = ir.calibrate_alpha(gh, OPTIONS.suffix, dataLength=optionDict['batch_width'],
                                         skip=optionDict['skip'], plot=OPTIONS.plot)  # keep Options
             saveCalibrationResults(alphas, OPTIONS.suffix + "alphas")
+        elif optionDict['calibrate_lr_sigma']:
+            swo = swg.get_swaptiongen(getIrModel(), optionDict['currency'], optionDict['irType'])
+            sigmas = swo.calibrate_Lr_sigma(modelName, skip=optionDict['skip'])
+            saveCalibrationResults(sigmas, OPTIONS.suffix + str(optionDict['skip']) + "_LRsigmas")
         else:
             gh = setupNetwork(options=optionDict, gradientFlag=True)
             dh = setupDataHandler(optionDict, allowPredictiveTransformation=True, testPercentage=0)
@@ -762,6 +764,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model', type=str, default='hullwhite', help='Interest rate model')
     parser.add_argument('--calibrate', action='store_true', help='Calibrate history')
     parser.add_argument('--calibrate_sigma', action='store_true', help='Calibrate only sigma')
+    parser.add_argument('--calibrate_lr_sigma', action='store_true', help='Calibrate sigma for linear regression')
     parser.add_argument('--calibrate_alpha', action='store_true', help='Calibrate only alpha')
     parser.add_argument('--plot', action='store_true', help="Plot results")
     parser.add_argument('-hs', '--historyStart', type=str, default=0, help='History start')
@@ -809,6 +812,7 @@ if __name__ == '__main__':
                         help="Loads model defined in file and chains it with the current nn model")
     parser.add_argument('--load_multiple', type=int, default=0, help="Load multiple models")
     parser.add_argument('--simulate', action='store_true', help="Run simulations")
+    parser.add_argument('--force_save', action='store_true', help="Saves in parent folder")
 
     OPTIONS, unparsed = parser.parse_known_args()
     if (OPTIONS.load_multiple > 0):
@@ -845,9 +849,7 @@ if __name__ == '__main__':
             optionDict['irType'] = OPTIONS.irType
             optionDict['simulate'] = OPTIONS.simulate
             optionDict['exportInstFw'] = False
-            pdb.set_trace()
             optionDict['kernels'] = OPTIONS.kernels
-            # optionDict['batch_width'] = OPTIONS.batch_width
 
         except Exception as ex:
             raise Exception("Exception loading option from file:" + str(ex))
