@@ -27,10 +27,17 @@ dateInDays = {"swap": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650,
                         3650, 4380, 5475, 7300, 9125, 10950, 14600, 18250],
               "eonia": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 547, 730, 1095, 1460, 1825,
                         2190, 2555, 2920, 3285, 3650, 4380, 5475, 7300, 9125, 10950, 12775, 14600, 18250],
+              "usd": [365, 730, 1095, 1460, 1825, 2190, 2555, 2920, 3285, 3650, 4380, 5475, 7300, 9125, 10950, 14600],
               "clean": [30, 61, 91, 122, 152, 182, 213, 243, 273, 304, 335, 365, 547, 730, 1095, 1460, 1825,
                         2190, 2555, 2920, 3285, 3650]
               }
+
 index_Map_Libor_Eonia = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 21, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+index_Map_Libor_Usd = [16, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
+index_Map_Libor_Common = [16, 28, 29, 30, 31, 32, 33, 34, 35]
+index_Map_EoniaCommon = [11, 14, 15, 16, 17, 18, 19, 20, 21]
+index_Map_UsdCommon = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
 Dt = 0.001
 
 
@@ -108,7 +115,7 @@ def transformDerivatives(derivative, channelStart, channelEnd, xShape):
         temp = []
         for j in range(i, derivative.shape[0], step):
             if derivative[j].shape[0] == 1:
-                integral = simps(np.log(1 + derivative[j]), lin)  # 1st
+                integral = 1 - derivative[j]
             else:
                 integral = simps(-np.log(1 + derivative[j]), lin)  # 1st
                 # integral = simps(np.log(1 - derivative[0])) / denom  # 2nd
@@ -185,6 +192,7 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
     # targetDataMode = 'deltair'
     # specialFilePrefix = '_perTermSTANDARD_pfw365_'
     # example:
+    # pred = ('ir', [30, 1, 16], [16], True)
     # import utils.customUtils as cu
     # cu.prepareProcData(scaleParams=False, dataFileName='data/ownData/AH_eonia2005_ir.csv',targetDataPath='exports/eonia_Delta_fDays365.csv',targetDataMode='deltair',specialFilePrefix='_eonia_pfw365_',volDepth=0,irDepth = 22, width = 30)
     # cu.prepareProcData(scaleParams=True, dataFileName='data/ownData/AH_eonia2005_ir.csv',

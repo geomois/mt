@@ -76,8 +76,8 @@ class NeuralNet(object):
                                                          depth=depthSize, sep=separable,
                                                          activationFunc=self._getFunction('act', 'c'),
                                                          initializer=self._getFunction('init', 'c')())
-                        maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
-                        layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
+                        # maxPooling = self._maxPoolLayer(layer, self.kernels.popleft(), self.poolStrides.popleft())
+                        # layer = tf.cond(self.poolingFlag, lambda: maxPooling, lambda: layer)
                         tf.summary.histogram(tf.get_variable_scope().name + '/layer', layer)
                     convcount += 1
                 elif ('l' in l.lower() or "lstm" in l.lower() or 'g' in l.lower() or "gru" in l.lower()):
@@ -290,7 +290,18 @@ class NeuralNet(object):
     def predict(self, vol, ir, sess, x_pl, *args):
         mapIndex = False
         if (ir.shape[1] != self.irChannels):
-            ir = ir[:, cu.index_Map_Libor_Eonia]
+            if (self.irChannels == 22):
+                ir = ir[:, cu.index_Map_Libor_Eonia]
+            elif (self.irChannels == 16):
+                ir = ir[:, cu.index_Map_Libor_Usd]
+            elif (self.irChannels == 9):
+                if (ir.shape[1] == 16):
+                    ir = ir[:, cu.index_Map_UsdCommon]
+                elif (ir.shape[1] == 22):
+                    ir = ir[:, cu.index_Map_EoniaCommon]
+                else:
+                    ir = ir[:, cu.index_Map_Libor_Common]
+
             mapIndex = True
         chained_pl = chainedOutput = None
         if (self.chainedModel is not None):
@@ -316,7 +327,6 @@ class NeuralNet(object):
             out = sess.run(self.outOp, feed_dict={x_pl: x, chained_pl: chainedOutput})
         else:
             out = sess.run(self.outOp, feed_dict={x_pl: x})
-
         if (self.derive):
             if (len(out[0].shape) == 3):
                 out[0] = out[0].reshape((1, 1, out[0].shape[1], out[0].shape[2]))

@@ -18,7 +18,10 @@ class IRCurve(du.TimeSeriesData):
         self.name = h5_irc_node + '_' + ccy + '_' + tenor
         self.name = self.name.lower()
         self.key_ts = parentNode + '/' + h5_irc_node + '/' + self.ccy + '/' + tenor.upper()
-        self._daycounter = ql.Actual360()
+        if (ccy.lower() == 'gbp'):
+            self._daycounter = ql.Actual365Fixed()
+        else:
+            self._daycounter = ql.Actual360()
         self.values = None
         self.curveArray = None
         super(IRCurve, self).__init__(self.key_ts, file_name=du.h5file, data=data)
@@ -301,7 +304,7 @@ class IRCurve(du.TimeSeriesData):
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
         outcome = np.asarray(outcome).reshape(-1)
-        outcome = predictive_model.derivativeScaling(outcome, self.ccy)
+        outcome = predictive_model.derivativeScaling(outcome, self.ccy, dataLength)
         outcome = np.append(np.zeros(dataLength - 1), outcome)
         if (plot):
             plt.plot(outcome, label=modelName)
@@ -326,7 +329,7 @@ def getIRCurves(modelMap=hullwhite_analytic, currency='GBP', irType='Libor', pNo
             index = ql.Eonia()
     elif (str(currency).lower() == 'usd'):
         if (str(irType).lower() == 'libor'):
-            index = ql.USDLibor(ql.Period(6, ql.Months))
+            index = ql.USDLibor(ql.Period(3, ql.Months))
         elif (str(irType).lower() == 'ois'):
             index = ql.FedFunds()
 

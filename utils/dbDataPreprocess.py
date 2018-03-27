@@ -56,6 +56,7 @@ def simplePlotVals(vals, ax, end=0, labels=["meanErrorConv", "meanErrorFnn", "me
         plt.plot(ax, vals[i][:, :end], label=labels[i])
     plt.grid()
     plt.legend(loc=9, bbox_to_anchor=(1.0, 1.0))
+    pd.DataFrame()
 
 
 def plotGroups(dat, xLabels, groupByColumn='X', columnToPlot='Z', sortValue='Date', scatter=False, start=-1, end=10):
