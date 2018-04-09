@@ -28,12 +28,12 @@ def calcMean(forward, sigma, a, time):
     return mm
 
 
-def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=100):
+def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumber=500):
     dateList = [swo._dates[430]]  # [swo._dates[50], swo._dates[430], swo._dates[550], swo._dates[650]]
     for l in dateList:
         ddate = l
         refDate = ql.Date(ddate.day, ddate.month, ddate.year)
-        months = 6
+        months = 26
         timestep = months * 30
         length = (months * 30) / 365  # in years
         # params, ir = runModel(swo, ddate, dataLength, 0, predictive_model)
@@ -42,15 +42,15 @@ def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumbe
         swo.set_date(l)
         ir = swo._ircurve
         avg = np.zeros((4, 1 + (months * 30)))
-        a = [-0.9, 0.9]
+        a = [0.3, 0.0001]
         for i in range(len(a)):
             alpha = a[i]
-            sigma = 0.5
+            sigma = 0.1
             levels = np.asarray(ir._levels)[0]
             fw = ir.curveToArray(levels, ir[ddate])
             # plt.plot(fw)
             # forward_rate = ir.curveimpl(refDate, fw)
-            forward_rate=[0.02]
+            forward_rate = [0.02]
             ql.Settings.instance().evaluationDate = refDate
             # spot_curve = ir[ddate]
             spot_curve = ql.FlatForward(refDate, ql.QuoteHandle(ql.SimpleQuote(forward_rate[0])), ql.Actual360())
@@ -63,14 +63,14 @@ def runSimulations(predictive_model, modelName, swo=None, dataLength=1, simNumbe
             # runModel(paths, predictive_model)
             # pdb.set_trace()
             plotSimulations(paths[:int(np.floor(len(paths) / 2))], timestep, time)
-            plotMean(paths, timestep, time, alpha, sigma, forward_rate)
-            avg[i] = np.average(paths, axis=0)
+            # plotMean(paths, timestep, time, alpha, sigma, forward_rate)
+            # avg[i] = np.average(paths, axis=0)
             # plt.plot(avg[i],label=a[i])
-        plt.legend()
-
-        print(((avg[0] - avg[1]) ** 2).mean())
-        print(((avg[1] - avg[2]) ** 2).mean())
-        print(((avg[2] - avg[3]) ** 2).mean())
+        # plt.legend()
+        #
+        # print(((avg[0] - avg[1]) ** 2).mean())
+        # print(((avg[1] - avg[2]) ** 2).mean())
+        # print(((avg[2] - avg[3]) ** 2).mean())
         # print(np.average(paths,axis=0))
         # plotSimulations(paths[:int(np.floor(len(paths) / 2))], timestep, time)
         # plotVariance(paths, timestep, time, alpha, sigma)
@@ -145,9 +145,11 @@ def runModel(paths, predictive_model):
 def plotSimulations(paths, timestep, time):
     num_paths = len(paths)
     plt.figure()
+    axes = plt.gca()
+    axes.set_ylim([-0.4, 0.4])
     for i in range(num_paths):
         plt.plot(time, paths[i, :], lw=0.8, alpha=0.6)
-    plt.title("Hull-White Short Rate Simulation")
+    # plt.title("Hull-White Short Rate Simulation")
 
 
 def plotVariance(paths, timestep, time, a, sigma):

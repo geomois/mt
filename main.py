@@ -775,7 +775,8 @@ if __name__ == '__main__':
                         help='Skip n first dates in history comparison')
     parser.add_argument('-pp', '--pipeline', type=str, default="", help='Pipeline path')
     parser.add_argument('-ipp', '--input_pipeline', type=str, default="", help="Pipeline path for input data")
-    parser.add_argument('-cpp', '--chained_pipeline', type=str, default="", help='Pipeline path of chained model')
+    parser.add_argument('-cpp', '--custom_pipeline', type=str, default="", help='Custom pipeline path')
+    parser.add_argument('-chpp', '--chained_pipeline', type=str, default="", help='Pipeline path of chained model')
     parser.add_argument('--scaler', type=str, default='minmax', help='Scaler')
     parser.add_argument('--in_scaler', type=str, default='minmax', help='Scaler')
     parser.add_argument('-ds', '--decay_steps', type=int, default=3000, help='Decay steps')
@@ -829,8 +830,8 @@ if __name__ == '__main__':
         try:
             fileName, model_dir = cu.splitFileName(OPTIONS.model_dir)
             optionDict = cu.load_obj(model_dir + '/options.pkl')
-            if (OPTIONS.chained_pipeline != ""):
-                optionDict['input_pipeline'] = OPTIONS.chained_pipeline
+            if (OPTIONS.custom_pipeline != ""):
+                optionDict['input_pipeline'] = OPTIONS.custom_pipeline
                 optionDict['use_input_pipeline'] = True
             optionDict['model_dir'] = OPTIONS.model_dir  # to use specific checkpoint
             optionDict['irFileName'] = OPTIONS.irFileName if OPTIONS.irFileName is not None else optionDict[
