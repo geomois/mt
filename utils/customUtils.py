@@ -188,7 +188,7 @@ def prepareProcData(mode='ir', scaleParams=False, dataFileName='data/toyData/AH_
                     targetDataMode=None, specialFilePrefix=None, predictiveShape=None, volDepth=156, irDepth=44,
                     width=30, cropFirst=0, alignedData=False):
     import utils.dataHandler as dh
-    # argetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
+    # targetDataPath = 'exports/AH_ir_Delta_fDays365.csv'
     # targetDataMode = 'deltair'
     # specialFilePrefix = '_perTermSTANDARD_pfw365_'
     # example:

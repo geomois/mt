@@ -221,7 +221,7 @@ def dfToNNData(dFrame, groupingColumns, targetDirectory=None, target=False):
         dat = np.empty((g.get_group(keyList[0]).Value.shape[0]))
         # pdb.set_trace()
         for key in keyList:
-            dat = np.vstack((dat, g.get_group(key).Value.copy().as_matrix()))
+            dat = np.vstack((dat, g.get_group(key).Value.copy().values))
 
     dat = dat[1:, :]
     # pdb.set_trace()

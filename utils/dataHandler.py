@@ -11,7 +11,7 @@ DEFAULT_TEST_DATA_PERCENTAGE = 0.2
 
 
 class DataHandler(object):
-    def __init__(self, dataFileName='data/toyData/AH_vol.npy'
+    def __init__(self, dataFileName='data/'
                  , testDataPercentage=DEFAULT_TEST_DATA_PERCENTAGE, batchSize=50, width=50, volDepth=156,
                  irDepth=44, sliding=True, useDataPointers=False, randomSplit=False, datePointer=False, save=False,
                  specialFilePrefix="", predictiveShape=None, targetDataPath=None, targetDataMode=None, cropFirst=0,
@@ -92,6 +92,7 @@ class DataHandler(object):
         return np.asarray(self.testData["input"]), np.asarray(self.testData['output'])
 
     def readData(self, batchSize=None, twinFile=True, clean=False):
+        # pdb.set_trace()
         batchSize, _, _, _ = self._checkFuncInput(batchSize)
         name, prefix, fileType, mode, rest = dbc.breakPath(self.dataFileName)  # rest=[] without '.'
         fileList = [(self.dataFileName, mode)]
@@ -334,6 +335,7 @@ class DataHandler(object):
         if (len(self.predictive[1]) > 2):
             outDepth = int(self.predictive[1][2])
         targetShape = np.asarray(targetDict['input']).shape
+
         if (mode.lower() is self.modes[0]):
             self.channelStart = 0
             self.channelEnd = self.volDepth
@@ -362,8 +364,12 @@ class DataHandler(object):
                         # targetArray = np.vstack((targetArray, output[i + window, j:colEnd].reshape(-1, outDepth)))
                 targetDict['output'] = targetArray
             else:
+                end = self.channelEnd
+                if(outDepth < (self.channelEnd - self.channelStart)):
+                    end = self.channelStart + outDepth
+
                 targetDict['output'] = self._reshapeToPredict(
-                    np.asarray(targetDict['input'][inWidth:, :, :outWidth, self.channelStart:self.channelEnd]),
+                    np.asarray(targetDict['input'][inWidth:, :, :outWidth, self.channelStart:end]),
                     outDepth).reshape((-1, outDepth))  # skip first
             inPut = targetDict['input'][:targetShape[0] - inWidth, :, :inWidth,
                     self.channelStart:self.channelEnd]  # skip last
