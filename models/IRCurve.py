@@ -304,7 +304,6 @@ class IRCurve(du.TimeSeriesData):
         if (len(outcomeStatic) > 1):
             np.save("sigmaStatic30.npy", outcomeStatic)
         outcome = np.asarray(outcome).reshape(-1)
-        outcome = predictive_model.derivativeScaling(outcome, self.ccy, dataLength)
         outcome = np.append(np.zeros(dataLength - 1), outcome)
         if (plot):
             plt.plot(outcome, label=modelName)

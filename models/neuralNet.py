@@ -9,8 +9,8 @@ class NeuralNet(object):
     def __init__(self, volChannels, irChannels, kernels=['10', '10'], depths=[10, 1], poolStrides=[2], units=[2],
                  poolingLayerFlag=False, architecture=['c', 'f', 'd'],
                  activationFunctions=[tf.nn.relu], weightInitializer=[tf.contrib.layers.xavier_initializer],
-                 weightRegularizer=[tf.contrib.layers.l2_regularizer], calibrationFunc=None,
-                 regularizationStrength=0.001, chainedModel=None, predictOp=None, pipeline=None, inPipeline=None,
+                 weightRegularizer=[tf.contrib.layers.l2_regularizer],
+                 regularizationStrength=0.001, predictOp=None, pipeline=None, inPipeline=None,
                  inMultipleNetsIndex=None, derive=False):
 
         self.regularizationStrength = regularizationStrength
@@ -35,14 +35,11 @@ class NeuralNet(object):
         else:
             self.inputPipelineList = []
             self.inputPipeline = inPipeline
-        self.calibrationFunc = calibrationFunc
         self.pipelineList = []
-        self.chainedModel = chainedModel
-        self.chainedChannel = 0 if chainedModel is None else chainedModel['output_dims'][1]
         self.derive = derive
         self.inMultipleNetsIndex = inMultipleNetsIndex
 
-    def inference(self, x, chainedValues=None):
+    def inference(self, x):
         '''
         :param x: expected shape (depth , signalSize)
         :param chainedValues: values from chained network
@@ -102,8 +99,6 @@ class NeuralNet(object):
                         elif (len(inShape) == 3):
                             layer = tf.reshape(layer, [-1, inShape[1] * inShape[2]])
 
-                        if (chainedValues is not None):
-                            layer = tf.concat([layer, chainedValues], axis=1)
                         tf.summary.histogram(tf.get_variable_scope().name + "/layer", layer)
                     flatcount += 1
                 elif (l.lower() == 'd' or l.lower() == "dense"):

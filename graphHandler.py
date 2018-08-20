@@ -1,9 +1,7 @@
+from models.neuralNet import *
+import pdb, time
 import tensorflow as tf
 import numpy as np
-from models.neuralNet import *
-import pdb, time, math
-usdBase = 1.85
-gbpBase = 10
 
 class GraphHandler(object):
     def __init__(self, modelPath, modelType, sessConfig, chainedPrefix=""):
@@ -75,26 +73,6 @@ class GraphHandler(object):
         self.model.outOp = op
         self.model.derive = True if self.gradientOp is not None else False
         self.model.setChainedDict(self.chainedDict)
-
-    def derivativeScaling(self, der, currency, historyWidth):
-        if (len(self.inputPlaceholder.shape) < 3):
-            return der
-
-        nnType = 'cnn' if self.model.architecture[0].lower() == "c" else 'lstm' if 'l' in self.model.architecture[
-            0].lower() else 'dense'
-        if (nnType == 'cnn' or nnType == 'lstm'):
-            if (currency.lower() == 'gbp' or currency.lower() == 'eur'):
-                scaler = 1 / math.log(historyWidth, gbpBase)
-                if (der.min() < 0):
-                    der -= der.min()
-                der = scaler * der
-            elif (currency.lower() == 'usd'):
-                scaler = 1 / math.log(historyWidth, usdBase)
-                if (der.min() < 0):
-                    der -= der.min()
-                der = scaler * der
-
-        return der  # to make sure for positive values
 
     def run(self, data, op=None):
         self.setSession()
