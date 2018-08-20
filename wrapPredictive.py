@@ -400,9 +400,9 @@ class PSeriesPredict():
 
         return mN
 
-    def prepareCalibration(self):
+    def preparePredictiveNetwork(self):
         channelRange = -1
-        gh = self.setupNetwork(options=self.optionDict, gradientFlag=True)
+        gh = self.setupNetwork(options=self.optionDict, gradientFlag=False)
         if (self.optionDict['use_input_pipeline'] and self.optionDict['input_pipeline'] is not None):
             pipelineList = cu.loadSavedScaler(self.optionDict['input_pipeline'])
             gh.model.setInputPipelineList(pipelineList)
@@ -432,10 +432,10 @@ class PSeriesPredict():
         if self.optionDict['exportForwardRates']:
             exportPath = './exports/' + self.optionDict['suffix'] + self.optionDict['forwardType'] + ".csv"
             if (not os.path.isfile(exportPath)):
-                ir = irc.getIRCurves(self.getIrModel(), currency=self.optionDict['currency'], irType=self.optionDict['irType'],
+                ir = irc.getIRCurves(self.getIrModel(), currency=self.optionDict['currency'],
+                                     irType=self.optionDict['irType'],
                                      irFileName=self.optionDict['irFileName'])
-                # dateInDays = self.optionDict['irType'] if self.optionDict['dayDict']
-                # ir.calcForward(path=exportPath, futureIncrementInDays=self.optionDict['futureIncrement'])
+
                 prime = False
                 if (self.optionDict['forwardType'].lower() in 'prime'):
                     prime = True
@@ -477,6 +477,9 @@ class PSeriesPredict():
             raise ValueError("--train_model argument can be lstm or cnn")
 
     def runPredict(self, data):
+        if(self.graphHandler is None):
+            self.graphHandler , _ = self.preparePredictiveNetwork()
+
         assert (self.graphHandler is not None), "Graph not loaded"
         return self.graphHandler.predict(ir = data)
 
